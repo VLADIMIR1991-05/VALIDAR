@@ -23,10 +23,12 @@ function validarTodo() {
                 // Aplica estado visual segun resultado.
                 if (errores.length > 0) {
                     card.classList.add("err");
+                    card.dataset.estadoValidacion = "Error";
                     mostrarErroresEnTarjeta(card, errores);
                     countErr++;
                 } else {
                     card.classList.add("ok");
+                    card.dataset.estadoValidacion = "OK";
                     countOk++;
                 }
 
@@ -123,7 +125,7 @@ function validarMueble(card) {
                 });
 
                 if (!validacion.ok) {
-                    errores.push(`Fila ${numeroFila}: ${pieza} ${validacion.mensaje} Medidas encontradas: ${formatearMedida(medida1)} x ${formatearMedida(medida2)} mm.`);
+                    errores.push(`Fila ${numeroFila}: ${pieza} ${validacion.mensaje} ${describirDiferenciaMedidas(medida1, medida2, validacion.objetivos || [])}`);
                     filaConError = true;
                 }
 
@@ -158,6 +160,7 @@ function validarMueble(card) {
 function limpiarEstadoValidacion(card) {
             // Quita clases de estado.
             card.classList.remove("err", "ok");
+            card.dataset.estadoValidacion = "";
 
             // Quita marcas de filas con error.
             card.querySelectorAll(".row-error").forEach(row => row.classList.remove("row-error"));
@@ -246,6 +249,27 @@ function marcarMedidasValidas(tr, objetivos) {
                 check.title = "Medida coincidente";
                 cell.appendChild(check);
             });
+        }
+
+function describirDiferenciaMedidas(medida1, medida2, objetivos) {
+            const medidas = [medida1, medida2].filter(Number.isFinite);
+            const esperadas = objetivos.filter(valor => Number.isFinite(valor) && valor > 0);
+            const encontradas = medidas.length ? medidas.map(formatearMedida).join(" x ") : "-";
+            const esperadasTexto = esperadas.length ? esperadas.map(formatearMedida).join(" x ") : "-";
+
+            if (!medidas.length || !esperadas.length) {
+                return `Esperado: ${esperadasTexto} mm. Encontrado: ${encontradas} mm.`;
+            }
+
+            const diferencias = medidas.map(medida => {
+                const mejor = esperadas.reduce((actual, esperado) => {
+                    const delta = Math.abs(medida - esperado);
+                    return delta < actual ? delta : actual;
+                }, Number.POSITIVE_INFINITY);
+                return Number.isFinite(mejor) ? Math.round(mejor * 10) / 10 : 0;
+            });
+
+            return `Esperado: ${esperadasTexto} mm. Encontrado: ${encontradas} mm. Diferencia minima: ${diferencias.join(" / ")} mm.`;
         }
 
 function obtenerProfundidadEsperada(tipo) {

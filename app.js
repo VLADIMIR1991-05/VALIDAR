@@ -100,6 +100,8 @@
         // Descuento usado para ancho de base/techo: 18mm x 2 laterales + 1mm fuga.
         const DESCUENTO_ANCHO = 37;
 
+        const VERSION_REGLAS = "2026.07.04";
+
         // Guarda todas las filas originales cargadas desde el archivo.
         let DATA_GLOBAL = [];
 
@@ -124,6 +126,8 @@
         // Guarda la posicion del navegador de errores.
         let INDICE_ERROR_ACTUAL = -1;
 
+        let ULTIMO_RESULTADO_COMPARACION = null;
+
         // Referencias a elementos principales para no buscarlos repetidamente.
         const uploadEl = document.getElementById("upload");
         const listaEl = document.getElementById("lista");
@@ -138,6 +142,9 @@
         const uploadCompararEl = document.getElementById("upload-comparar");
         const labelUploadCompararEl = document.getElementById("label-upload-comparar");
         const documentNameEl = document.getElementById("document-name");
+        const autoValidarEl = document.getElementById("auto-validar");
+        const exportarEl = document.getElementById("btn-exportar");
+        const exportarComparacionEl = document.getElementById("btn-exportar-comparacion");
 
         // Conecta el evento de carga de archivo con su funcion.
         uploadEl.addEventListener("change", manejarArchivoSeleccionado);
@@ -156,6 +163,8 @@
         // Conecta el boton de limpieza.
         document.getElementById("btn-limpiar").addEventListener("click", limpiarFiltros);
 
+        exportarEl.addEventListener("click", exportarReporteValidacion);
+
         // Permite consultar el codigo tambien al escribir.
         document.getElementById("codigo-consulta").addEventListener("input", consultarCodigoMueble);
 
@@ -167,6 +176,8 @@
 
         // Carga el archivo secundario y ejecuta la comparacion.
         uploadCompararEl.addEventListener("change", manejarArchivoComparar);
+
+        exportarComparacionEl.addEventListener("click", exportarReporteComparacion);
 
         // Lee el archivo seleccionado por el usuario.
         function manejarArchivoSeleccionado(event) {
@@ -208,6 +219,8 @@
 
                     // Dibuja los datos en pantalla.
                     renderizar(DATA_GLOBAL);
+
+                    if (autoValidarEl.checked) validarTodo();
                 })
                 .catch(error => {
                     // Muestra un mensaje claro si el archivo no se pudo interpretar.
@@ -975,11 +988,13 @@
             if (data.length === 0) {
                 mostrarEstadoVacio("Sin resultados", "No hay muebles que coincidan con los filtros.");
                 actualizarStats(0, 0);
+                exportarEl.disabled = true;
                 return;
             }
 
             // Agrupa las filas por OP y luego por codigo de mueble.
             const porOP = agruparPorOpYMueble(data);
+            const totalEstimado = Object.values(porOP).reduce((total, muebles) => total + Object.keys(muebles).length, 0);
 
             // Cuenta cuantos muebles se van creando.
             let totalMuebles = 0;
@@ -1002,9 +1017,10 @@
                 Object.keys(porOP[op]).sort((a, b) => compararMueblesPorEspecial(porOP[op], a, b)).forEach(cod => {
                     // Toma las piezas del mueble.
                     const items = porOP[op][cod];
+                    const numeroMueble = totalMuebles + 1;
 
                     // Crea la tarjeta visual.
-                    const tarjeta = crearTarjetaMueble(op, cod, items);
+                    const tarjeta = crearTarjetaMueble(op, cod, items, numeroMueble, totalEstimado);
 
                     // Agrega la tarjeta al bloque de OP.
                     opBlock.appendChild(tarjeta);
@@ -1025,6 +1041,7 @@
 
             // Actualiza contadores.
             actualizarStats(totalMuebles, totalMuebles);
+            exportarEl.disabled = totalMuebles === 0;
 
             // Aplica filtros activos si existian.
             filtrarUniversal();
@@ -1118,7 +1135,7 @@
         }
 
         // Crea la tarjeta de un mueble con encabezado, tabla y zona de validacion.
-        function crearTarjetaMueble(op, cod, items) {
+        function crearTarjetaMueble(op, cod, items, numeroMueble, totalMuebles) {
             // Calcula descripcion del codigo.
             const nombre = obtenerNombre(cod);
 
@@ -1164,12 +1181,14 @@
             card.dataset.codpuro = cod;
             card.dataset.tipo = tipoVal.toUpperCase();
             card.dataset.op = op;
+            card.dataset.numeroMueble = String(numeroMueble);
+            card.dataset.totalMuebles = String(totalMuebles);
             card.dataset.universal = textoUniversal;
             card.dataset.piezas = String(items.length);
             card.dataset.especial = especiales.length ? "1" : "0";
 
             // Crea encabezado visual.
-            card.appendChild(crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales));
+            card.appendChild(crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales, numeroMueble, totalMuebles));
 
             // Crea contenedor para errores de validacion.
             const validationList = crearElemento("div", "validation-list");
@@ -1184,7 +1203,7 @@
         }
 
         // Crea el encabezado de una tarjeta.
-        function crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales = []) {
+        function crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales = [], numeroMueble = 0, totalMuebles = 0) {
             // Crea contenedor de encabezado.
             const header = crearElemento("div", "mueble-header");
 
@@ -1193,6 +1212,10 @@
 
             // Crea linea de codigo y ubicacion.
             const codLine = crearElemento("div", "cod-line");
+
+            if (numeroMueble && totalMuebles) {
+                codLine.appendChild(crearElemento("span", "table-index", `${numeroMueble}/${totalMuebles}`));
+            }
 
             // Crea codigo visible.
             codLine.appendChild(crearElemento("div", "cod-mueble", cod));
@@ -1397,6 +1420,8 @@
             // Limpia estado previo de comparacion.
             DATA_ARCHIVO_COMPARAR = [];
             MAPA_ARCHIVO_COMPARAR = {};
+            ULTIMO_RESULTADO_COMPARACION = null;
+            exportarComparacionEl.disabled = true;
             uploadCompararEl.value = "";
             uploadCompararEl.disabled = true;
             labelUploadCompararEl.classList.add("disabled");
@@ -1415,6 +1440,7 @@
                     actualizarNombreDocumento(file.name);
                     mostrarAvisosDeColumnas();
                     renderizar(DATA_GLOBAL);
+                    if (autoValidarEl.checked) validarTodo();
 
                     // Habilita segundo archivo.
                     uploadCompararEl.disabled = false;
@@ -1444,6 +1470,7 @@
                     DATA_ARCHIVO_COMPARAR = data;
                     MAPA_ARCHIVO_COMPARAR = data.length > 0 ? crearMapaColumnas(Object.keys(data[0]), data) : {};
                     const resultado = compararArchivos(DATA_BASE_COMPARACION, MAPA_BASE_COMPARACION, DATA_ARCHIVO_COMPARAR, MAPA_ARCHIVO_COMPARAR);
+                    ULTIMO_RESULTADO_COMPARACION = resultado;
                     mostrarResultadoComparacion(resultado, file.name);
                 })
                 .catch(error => {
@@ -1547,6 +1574,7 @@
         function mostrarResultadoComparacion(resultado, nombreArchivo) {
             // Crea texto resumen.
             compareResultEl.textContent = `Comparado con ${nombreArchivo}: ${resultado.faltan.length} faltan, ${resultado.sobran.length} sobran, ${resultado.cambiadas.length} cambiadas. Piezas base: ${resultado.baseTotal}. Piezas comparadas: ${resultado.compararTotal}.`;
+            exportarComparacionEl.disabled = false;
 
             // Limpia avisos anteriores.
             limpiarAvisos();
@@ -1566,6 +1594,67 @@
             // Inserta detalle como texto.
             detalle.textContent = partes.join(" | ");
             avisosEl.appendChild(detalle);
+        }
+
+        function exportarReporteValidacion() {
+            const filas = [["version_reglas", "estado", "op", "codigo_mueble", "tipo", "dimensiones", "piezas", "errores"]];
+
+            document.querySelectorAll(".mueble-container").forEach(card => {
+                const errores = Array.from(card.querySelectorAll(".validation-list li"))
+                    .map(item => item.textContent.trim())
+                    .filter(Boolean)
+                    .join(" | ");
+                const estado = card.dataset.estadoValidacion || (card.classList.contains("err") ? "Error" : card.classList.contains("ok") ? "OK" : "Sin validar");
+                const dimensiones = [card.dataset.ancho, card.dataset.alto, card.dataset.profundidad]
+                    .filter(valor => Number(valor) > 0)
+                    .join("x");
+
+                filas.push([
+                    VERSION_REGLAS,
+                    estado,
+                    card.dataset.op || "",
+                    card.dataset.codpuro || "",
+                    card.dataset.tipoModulo || "",
+                    dimensiones,
+                    card.dataset.piezas || "0",
+                    errores
+                ]);
+            });
+
+            descargarCsv("reporte-validacion.csv", filas);
+        }
+
+        function exportarReporteComparacion() {
+            if (!ULTIMO_RESULTADO_COMPARACION) return;
+
+            const filas = [["tipo", "fila_base", "fila_comparada", "detalle"]];
+            ULTIMO_RESULTADO_COMPARACION.faltan.forEach(item => {
+                filas.push(["Falta", item.fila, "", item.etiqueta]);
+            });
+            ULTIMO_RESULTADO_COMPARACION.sobran.forEach(item => {
+                filas.push(["Sobra", "", item.fila, item.etiqueta]);
+            });
+            ULTIMO_RESULTADO_COMPARACION.cambiadas.forEach(item => {
+                filas.push(["Cambia", item.base.fila, item.comparar.fila, `${item.base.etiqueta} | base: ${item.base.firma} | comparar: ${item.comparar.firma}`]);
+            });
+
+            descargarCsv("reporte-comparacion.csv", filas);
+        }
+
+        function descargarCsv(nombreArchivo, filas) {
+            const contenido = filas.map(fila => fila.map(valor => {
+                const texto = String(valor ?? "");
+                return /[",\n;]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+            }).join(";")).join("\n");
+            const blob = new Blob([`\ufeff${contenido}`], { type: "text/csv;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const enlace = document.createElement("a");
+            enlace.href = url;
+            enlace.download = nombreArchivo;
+            document.body.appendChild(enlace);
+            enlace.click();
+            enlace.remove();
+            URL.revokeObjectURL(url);
         }
 
         // Descifra el codigo escrito en el consultor independiente.

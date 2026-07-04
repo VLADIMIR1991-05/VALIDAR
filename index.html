@@ -4,7 +4,7 @@
     <!-- Define la codificacion correcta para mostrar tildes y caracteres en espanol. -->
     <meta charset="UTF-8">
     <!-- Permite que la pagina se adapte correctamente a celulares y tablets. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="viewport" content="width=1180, initial-scale=0.32, maximum-scale=5.0, user-scalable=yes">
     <!-- Titulo que aparece en la pestana del navegador. -->
     <title>Validador de Despiece - Madeval</title>
     <!-- Libreria para leer archivos Excel .xlsx desde el navegador. -->
@@ -43,11 +43,14 @@
         /* Estilos base del cuerpo de la pagina. */
         body {
             min-height: 100vh;
+            min-width: 1180px;
             font-family: "Segoe UI", Arial, sans-serif;
             background:
                 linear-gradient(180deg, rgba(255, 253, 248, 0.72), rgba(236, 233, 226, 0.92)),
                 var(--bg);
             color: var(--text);
+            overflow-x: auto;
+            touch-action: pan-x pan-y pinch-zoom;
         }
 
         /* Barra superior fija con titulo y boton de carga. */
@@ -129,9 +132,6 @@
 
         /* Franja de filtros y acciones. */
         .controls {
-            position: sticky;
-            top: 72px;
-            z-index: 18;
             display: grid;
             grid-template-columns: repeat(4, minmax(140px, 1fr)) auto auto auto;
             align-items: center;
@@ -144,9 +144,6 @@
 
         /* Consultor independiente para descifrar codigos de mueble. */
         .decoder {
-            position: sticky;
-            top: 139px;
-            z-index: 17;
             display: grid;
             grid-template-columns: minmax(180px, 340px) 1fr;
             gap: 10px;
@@ -257,6 +254,24 @@
         /* Color hover del boton secundario. */
         .btn-secondary:hover {
             background: #e5e0d5;
+        }
+
+        .check-option {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 38px;
+            padding: 8px 10px;
+            color: #4d5a52;
+            font-size: 0.82rem;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+
+        .check-option input {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
         }
 
         /* Barra de contadores y avisos. */
@@ -393,6 +408,16 @@
             font-weight: 850;
             color: var(--primary);
             word-break: break-word;
+        }
+
+        .table-index {
+            display: block;
+            width: 100%;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            line-height: 1;
+            white-space: nowrap;
         }
 
         /* Linea del codigo con ubicacion al lado. */
@@ -844,6 +869,11 @@
                 flex: 1 1 100%;
             }
 
+            .check-option {
+                justify-content: center;
+                width: 100%;
+            }
+
             .controls,
             .decoder,
             .compare-panel {
@@ -914,6 +944,7 @@
             <h1>Validador de Despiece</h1>
             <!-- Nombre del documento cargado o instruccion inicial. -->
             <p id="document-name">Carga un archivo Excel o CSV para comenzar.</p>
+            <p id="app-version">Reglas v2026.07.04</p>
         </div>
 
         <!-- Acciones fijas de cabecera. -->
@@ -951,8 +982,13 @@
         <input type="text" class="f-input" id="f4" placeholder="Filtro 4" autocomplete="off">
         <!-- Boton que ejecuta la validacion dimensional. -->
         <button type="button" class="btn btn-primary" id="btn-validar">Validar estructura</button>
+        <label class="check-option" title="Ejecuta la validacion al terminar la carga del archivo">
+            <input type="checkbox" id="auto-validar">
+            Auto validar
+        </label>
         <!-- Boton que borra los filtros activos. -->
         <button type="button" class="btn btn-secondary" id="btn-limpiar">Limpiar</button>
+        <button type="button" class="btn btn-secondary" id="btn-exportar" disabled>Exportar reporte</button>
         <!-- Boton que activa el modo de comparacion entre dos archivos. -->
         <button type="button" class="btn btn-secondary" id="btn-modo-comparar">Comparar archivos</button>
     </section>
@@ -975,6 +1011,7 @@
         <label class="file-label disabled" id="label-upload-comparar" for="upload-comparar" title="Cargar segundo archivo">2. Archivo a comparar</label>
         <!-- Input oculto del segundo archivo. -->
         <input type="file" id="upload-comparar" accept=".xlsx,.xls,.csv" disabled>
+        <button type="button" class="btn btn-secondary" id="btn-exportar-comparacion" disabled>Exportar comparacion</button>
         <!-- Resultado de comparacion. -->
         <div class="compare-result" id="compare-result">Activa el modo y carga un archivo base para comenzar.</div>
     </section>
