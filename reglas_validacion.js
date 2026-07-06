@@ -402,6 +402,21 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                 };
             }
 
+            if (esFrentePp(nombre)) {
+                if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
+
+                const anchoFrentePp = modulo.ancho - 3;
+                const altoFrentePp = modulo.alto - 3;
+                const ok = coincideParMedidas(medida1, medida2, altoFrentePp, anchoFrentePp);
+
+                return {
+                    ok,
+                    mensaje: `deberia medir ${altoFrentePp} x ${anchoFrentePp} mm como frente PP, descontando 1.5 mm por lado.`,
+                    valida: true,
+                    objetivos: [altoFrentePp, anchoFrentePp]
+                };
+            }
+
             if (esFrenteCajon(nombre)) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
 
@@ -685,6 +700,22 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                     mensaje: `deberia medir ${modulo.anchoInterno} x 270/400 mm como repisa especial de bar.`,
                     valida: true,
                     objetivos: [modulo.anchoInterno, ...profundidadesBar]
+                };
+            }
+
+            if (esRepisaVoladaEngrosada(nombre)) {
+                if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
+
+                const sobranteEngrosado = 30;
+                const profundidadVolada = 320 + sobranteEngrosado;
+                const anchoRepisaVolada = modulo.ancho + sobranteEngrosado;
+                const ok = coincideParMedidas(medida1, medida2, anchoRepisaVolada, profundidadVolada);
+
+                return {
+                    ok,
+                    mensaje: `deberia medir ${anchoRepisaVolada} x ${profundidadVolada} mm como repisa volada engrosada E3, sumando 30 mm para rebajar despues.`,
+                    valida: true,
+                    objetivos: [anchoRepisaVolada, profundidadVolada]
                 };
             }
 
@@ -1123,6 +1154,11 @@ function esFrenteFalso(pieza) {
             return normal === "FF" || partes.includes("FF") || normal.includes("FRENTEFALSO");
         }
 
+function esFrentePp(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal === "FRE-PP" || normal === "FREPP" || normal.startsWith("FRE-PP");
+        }
+
 function esFondoMerivobox(pieza) {
             const normal = normalizarPieza(pieza);
             return normal === "FON-MRV" || normal === "FONMRV" || (normal.startsWith("FON") && normal.includes("MRV"));
@@ -1154,6 +1190,7 @@ function esFrisoSlim(pieza) {
 
 function esFondoOPosicion(pieza) {
             const normal = normalizarPieza(pieza);
+            if (esFrentePp(normal)) return false;
             return normal.startsWith("FON") ||
                 normal.startsWith("POS") ||
                 normal.startsWith("FRI") ||
@@ -1202,6 +1239,11 @@ function esRepisaTapa(pieza) {
 function esRepisaEspecialBar(pieza) {
             const normal = normalizarPieza(pieza);
             return normal.includes("REPF-E3") || normal.includes("REPFE3");
+        }
+
+function esRepisaVoladaEngrosada(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal.includes("REPVOLE3") || normal.includes("REP-VOL-E3") || (normal.includes("REP") && normal.includes("VOL") && normal.includes("E3"));
         }
 
 function esBase(pieza) {
