@@ -208,6 +208,24 @@ function interpretarDetalleCompacto(detalle, tipo) {
                     continue;
                 }
 
+                // Separa letras pegadas antes de profundidad, por ejemplo DP3 => D + P3.
+                const profundidadPegada = resto.match(/^([A-Z]+?)P(\d+(?:[.,]\d+)?)/);
+                if (profundidadPegada) {
+                    const prefijo = profundidadPegada[1];
+                    const profundidadToken = `P${profundidadPegada[2]}`;
+                    const tokenPrefijo = buscarTokenConocido(prefijo);
+
+                    if (tokenPrefijo && tokenPrefijo.length === prefijo.length) {
+                        partes.push(traducirToken(tokenPrefijo));
+                    } else {
+                        prefijo.split("").forEach(letra => partes.push(traducirToken(letra)));
+                    }
+
+                    partes.push(traducirProfundidad(profundidadToken));
+                    resto = resto.slice(profundidadPegada[0].length);
+                    continue;
+                }
+
                 // Detecta G seguida de numero como cantidad de gavetas.
                 const gavetasCompactas = resto.match(/^G(\d+)/);
                 if (gavetasCompactas) {
@@ -394,7 +412,7 @@ function extraerAlturaMm(texto) {
         }
 
 function extraerProfundidadMm(texto) {
-            const match = String(texto || "").toUpperCase().match(/(?<![A-Z\/])P(\d+(?:[.,]\d+)?)/);
+            const match = String(texto || "").toUpperCase().match(/(?<![\/-])P(\d+(?:[.,]\d+)?)/);
             if (!match) return 0;
 
             const numero = Number.parseFloat(match[1].replace(",", "."));
@@ -416,7 +434,7 @@ function tipoUsaNumeroComoProfundidad(tipo) {
         }
 
 function profundidadEstructuraDesdeCodigo(texto, profundidadTotal, tipo = "") {
-            const match = String(texto || "").toUpperCase().match(/(?<![A-Z\/])P(\d+(?:[.,]\d+)?)/);
+            const match = String(texto || "").toUpperCase().match(/(?<![\/-])P(\d+(?:[.,]\d+)?)/);
             const numero = match ? Number.parseFloat(match[1].replace(",", ".")) : 0;
             const profundidad = Number(profundidadTotal) || 0;
             const familia = String(tipo || "").toUpperCase();
