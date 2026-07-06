@@ -126,6 +126,9 @@
         // Guarda la posicion del navegador de errores.
         let INDICE_ERROR_ACTUAL = -1;
 
+        // Guarda si el panel de reporte esta abierto.
+        let REPORTE_VISIBLE = false;
+
         let ULTIMO_RESULTADO_COMPARACION = null;
 
         // Referencias a elementos principales para no buscarlos repetidamente.
@@ -145,6 +148,9 @@
         const autoValidarEl = document.getElementById("auto-validar");
         const exportarEl = document.getElementById("btn-exportar");
         const exportarComparacionEl = document.getElementById("btn-exportar-comparacion");
+        const reportePanelEl = document.getElementById("reporte-panel");
+        const reporteContenidoEl = document.getElementById("reporte-contenido");
+        const reporteResumenEl = document.getElementById("reporte-resumen");
 
         // Conecta el evento de carga de archivo con su funcion.
         uploadEl.addEventListener("change", manejarArchivoSeleccionado);
@@ -165,6 +171,15 @@
 
         exportarEl.addEventListener("click", exportarReporteValidacion);
 
+        // Imprime el reporte para guardarlo como PDF.
+        document.getElementById("btn-reporte-pdf").addEventListener("click", descargarReportePdf);
+
+        // Exporta el reporte de errores a Excel.
+        document.getElementById("btn-reporte-excel").addEventListener("click", descargarReporteExcel);
+
+        // Cierra el panel de reporte.
+        document.getElementById("btn-reporte-cerrar").addEventListener("click", cerrarReporteErrores);
+
         // Permite consultar el codigo tambien al escribir.
         document.getElementById("codigo-consulta").addEventListener("input", consultarCodigoMueble);
 
@@ -179,6 +194,11 @@
 
         exportarComparacionEl.addEventListener("click", exportarReporteComparacion);
 
+        // Mantiene los controles fijos con alturas reales, tambien en movil.
+        window.addEventListener("resize", actualizarOffsetsPegados);
+        window.addEventListener("orientationchange", actualizarOffsetsPegados);
+        actualizarOffsetsPegados();
+
         // Lee el archivo seleccionado por el usuario.
         function manejarArchivoSeleccionado(event) {
             // Toma el primer archivo seleccionado.
@@ -189,6 +209,7 @@
 
             // Reinicia el estado de validacion.
             VALIDADO = false;
+            cerrarReporteErrores();
 
             // Limpia avisos anteriores.
             limpiarAvisos();
@@ -1048,6 +1069,9 @@
 
             // Si ya se habia validado, vuelve a validar la vista nueva.
             if (VALIDADO) validarTodo();
+
+            // Recalcula posiciones fijas despues de dibujar la vista.
+            actualizarOffsetsPegados();
         }
 
         // Agrupa filas por OP y codigo de mueble.
@@ -1344,7 +1368,7 @@
                 .filter(Boolean);
 
             // Busca todas las tarjetas de muebles.
-            const contenedores = document.querySelectorAll(".mueble-container");
+            const contenedores = listaEl.querySelectorAll(".mueble-container");
 
             // Inicializa contador visible.
             let visibles = 0;
@@ -1369,7 +1393,7 @@
             });
 
             // Oculta bloques de OP que quedaron sin muebles visibles.
-            document.querySelectorAll(".op-block").forEach(block => {
+            listaEl.querySelectorAll(".op-block").forEach(block => {
                 const hayVisible = [...block.querySelectorAll(".mueble-container")].some(card => card.style.display !== "none");
                 block.style.display = hayVisible ? "" : "none";
             });
@@ -1597,31 +1621,167 @@
         }
 
         function exportarReporteValidacion() {
-            const filas = [["version_reglas", "estado", "op", "codigo_mueble", "tipo", "dimensiones", "piezas", "errores"]];
+            mostrarReporteErrores();
+        }
 
-            document.querySelectorAll(".mueble-container").forEach(card => {
-                const errores = Array.from(card.querySelectorAll(".validation-list li"))
-                    .map(item => item.textContent.trim())
-                    .filter(Boolean)
-                    .join(" | ");
-                const estado = card.dataset.estadoValidacion || (card.classList.contains("err") ? "Error" : card.classList.contains("ok") ? "OK" : "Sin validar");
-                const dimensiones = [card.dataset.ancho, card.dataset.alto, card.dataset.profundidad]
-                    .filter(valor => Number(valor) > 0)
-                    .join("x");
+        // Ajusta los top sticky usando la altura real de cabecera y filtros.
+        function actualizarOffsetsPegados() {
+            const header = document.querySelector(".header");
+            const controls = document.querySelector(".controls");
+            const headerHeight = header ? Math.ceil(header.getBoundingClientRect().height) : 72;
+            const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) : 67;
+            document.documentElement.style.setProperty("--header-sticky-height", `${headerHeight}px`);
+            document.documentElement.style.setProperty("--controls-sticky-height", `${controlsHeight}px`);
+        }
 
-                filas.push([
-                    VERSION_REGLAS,
-                    estado,
-                    card.dataset.op || "",
-                    card.dataset.codpuro || "",
-                    card.dataset.tipoModulo || "",
-                    dimensiones,
-                    card.dataset.piezas || "0",
-                    errores
-                ]);
+        // Abre el reporte visual con solo tarjetas en error.
+        function mostrarReporteErrores() {
+            if (DATA_GLOBAL.length === 0) {
+                mostrarErrorGeneral("Carga un archivo antes de mostrar el reporte.");
+                return;
+            }
+
+            if (!VALIDADO) validarTodo();
+            REPORTE_VISIBLE = true;
+            construirReporteErrores();
+            reportePanelEl.classList.add("show");
+            exportarEl.textContent = "Actualizar reporte";
+            reportePanelEl.scrollIntoView({ behavior: "smooth", block: "start" });
+            actualizarOffsetsPegados();
+        }
+
+        // Cierra el reporte sin tocar la vista principal.
+        function cerrarReporteErrores() {
+            REPORTE_VISIBLE = false;
+            if (reportePanelEl) reportePanelEl.classList.remove("show");
+            if (reporteContenidoEl) reporteContenidoEl.textContent = "";
+            if (reporteResumenEl) reporteResumenEl.textContent = "Valida el archivo y pulsa Mostrar reporte.";
+            if (exportarEl) exportarEl.textContent = "Mostrar reporte";
+        }
+
+        // Construye el reporte con la misma jerarquia OP > mueble, solo errores.
+        function construirReporteErrores() {
+            reporteContenidoEl.textContent = "";
+            const tarjetasError = Array.from(listaEl.querySelectorAll(".mueble-container.err"));
+
+            if (tarjetasError.length === 0) {
+                reporteResumenEl.textContent = "No hay muebles con error en la validacion actual.";
+                reporteContenidoEl.appendChild(crearElemento("div", "empty", "Sin errores para reportar."));
+                return;
+            }
+
+            reporteResumenEl.textContent = `${tarjetasError.length} muebles con error. ${documentNameEl.textContent}`;
+            const grupos = new Map();
+
+            tarjetasError.forEach(card => {
+                const op = card.dataset.op || "Sin OP";
+                if (!grupos.has(op)) grupos.set(op, []);
+                grupos.get(op).push(card);
             });
 
-            descargarCsv("reporte-validacion.csv", filas);
+            Array.from(grupos.keys()).sort(compararNatural).forEach(op => {
+                const block = crearElemento("section", "op-block");
+                block.appendChild(crearElemento("div", "op-title", `OP: ${op}`));
+
+                grupos.get(op).forEach(card => {
+                    const copia = card.cloneNode(true);
+                    copia.style.display = "";
+                    copia.classList.add("report-card");
+                    block.appendChild(copia);
+                });
+
+                reporteContenidoEl.appendChild(block);
+            });
+        }
+
+        // Abre impresion enfocada al reporte para guardar como PDF.
+        function descargarReportePdf() {
+            if (!REPORTE_VISIBLE) mostrarReporteErrores();
+            document.body.classList.add("report-printing");
+            window.setTimeout(() => window.print(), 100);
+            window.setTimeout(() => document.body.classList.remove("report-printing"), 1200);
+        }
+
+        // Exporta a Excel los errores y las piezas visibles dentro del reporte.
+        function descargarReporteExcel() {
+            if (!window.XLSX) {
+                alert("No se pudo cargar la libreria de Excel.");
+                return;
+            }
+
+            if (!REPORTE_VISIBLE) mostrarReporteErrores();
+            const cards = Array.from(reporteContenidoEl.querySelectorAll(".mueble-container.err"));
+            if (cards.length === 0) {
+                alert("No hay errores para exportar.");
+                return;
+            }
+
+            const filas = [];
+            cards.forEach(card => {
+                const errores = Array.from(card.querySelectorAll(".validation-list li, .validation-item")).map(el => limpiarTextoReporte(el.textContent)).join(" | ");
+                const codigo = card.dataset.codpuro || limpiarTextoReporte(card.querySelector(".cod-mueble")?.textContent || "");
+                const op = card.dataset.op || "";
+                const dimensiones = limpiarTextoReporte(card.querySelector(".dim-tag")?.textContent || "");
+                const grosor = limpiarTextoReporte(card.querySelector(".thickness-tag")?.textContent || "");
+                const ubicacion = limpiarTextoReporte(card.querySelector(".ubi-tag")?.textContent || "");
+                const material = limpiarTextoReporte(card.querySelector(".material-tag")?.textContent || "");
+
+                filas.push({
+                    bloque: "MUEBLE",
+                    version_reglas: VERSION_REGLAS,
+                    op,
+                    codigo,
+                    dimensiones,
+                    grosor,
+                    ubicacion,
+                    material,
+                    errores,
+                    job: "",
+                    cod_pieza: "",
+                    cant_piezas: "",
+                    medida1: "",
+                    medida2: "",
+                    l1: "",
+                    l2: "",
+                    c1: "",
+                    c2: "",
+                    nomueble: ""
+                });
+
+                const headers = Array.from(card.querySelectorAll("thead th")).map(th => limpiarTextoReporte(th.textContent));
+                card.querySelectorAll("tbody tr").forEach(row => {
+                    const cells = Array.from(row.querySelectorAll("td")).map(td => limpiarTextoReporte(td.textContent));
+                    const pieza = { bloque: "PIEZA", version_reglas: VERSION_REGLAS, op, codigo, dimensiones: "", grosor: "", ubicacion: "", material: "", errores: "" };
+                    headers.forEach((header, index) => {
+                        pieza[header.toLowerCase()] = cells[index] || "";
+                    });
+                    filas.push(pieza);
+                });
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(filas);
+            ws["!cols"] = [
+                { wch: 10 }, { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 18 }, { wch: 10 }, { wch: 12 },
+                { wch: 34 }, { wch: 80 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 10 },
+                { wch: 10 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 10 }
+            ];
+            XLSX.utils.book_append_sheet(wb, ws, "Errores");
+            XLSX.writeFile(wb, `reporte_errores_${fechaArchivoReporte()}.xlsx`);
+        }
+
+        // Limpia espacios para exportaciones.
+        function limpiarTextoReporte(texto) {
+            return String(texto || "").replace(/\s+/g, " ").trim();
+        }
+
+        // Fecha corta para nombres de archivo.
+        function fechaArchivoReporte() {
+            const hoy = new Date();
+            const y = hoy.getFullYear();
+            const m = String(hoy.getMonth() + 1).padStart(2, "0");
+            const d = String(hoy.getDate()).padStart(2, "0");
+            return `${y}${m}${d}`;
         }
 
         function exportarReporteComparacion() {
@@ -1773,7 +1933,7 @@
 
             // Calcula piezas desde las tarjetas si no se enviaron valores.
             if (piezasVisibles === null || piezasTotal === null) {
-                const contenedores = document.querySelectorAll(".mueble-container");
+                const contenedores = listaEl.querySelectorAll(".mueble-container");
                 piezasVisibles = 0;
                 piezasTotal = 0;
                 contenedores.forEach(div => {

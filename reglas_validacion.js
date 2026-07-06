@@ -13,7 +13,7 @@ function validarTodo() {
             let countErr = 0;
 
             // Recorre cada tarjeta de mueble.
-            document.querySelectorAll(".mueble-container").forEach(card => {
+            listaEl.querySelectorAll(".mueble-container").forEach(card => {
                 // Limpia estado anterior.
                 limpiarEstadoValidacion(card);
 
@@ -43,10 +43,11 @@ function validarTodo() {
             chipErrEl.style.display = countErr > 0 ? "" : "none";
             chipErrEl.style.cursor = countErr > 0 ? "pointer" : "";
             chipErrEl.title = countErr > 0 ? "Click para ir al siguiente mueble con falla" : "";
+            if (typeof REPORTE_VISIBLE !== "undefined" && REPORTE_VISIBLE) construirReporteErrores();
         }
 
 function irAlSiguienteError() {
-            const errores = Array.from(document.querySelectorAll(".mueble-container.err"))
+            const errores = Array.from(listaEl.querySelectorAll(".mueble-container.err"))
                 .filter(card => card.offsetParent !== null);
 
             if (errores.length === 0) return;
