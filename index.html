@@ -48,7 +48,6 @@
                 linear-gradient(180deg, rgba(255, 253, 248, 0.72), rgba(236, 233, 226, 0.92)),
                 var(--bg);
             color: var(--text);
-            touch-action: pan-x pan-y pinch-zoom;
         }
 
         /* Barra superior fija con titulo y boton de carga. */
@@ -260,22 +259,36 @@
             background: #e5e0d5;
         }
 
-        .check-option {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            min-height: 38px;
-            padding: 8px 10px;
-            color: #4d5a52;
-            font-size: 0.82rem;
-            font-weight: 750;
-            white-space: nowrap;
+        /* Boton compacto que despliega filtros, consulta y herramientas. */
+        .btn-tools-toggle {
+            border-color: rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
         }
 
-        .check-option input {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--accent);
+        /* Panel plegable de herramientas bajo la cabecera fija. */
+        .tools-panel {
+            position: sticky;
+            top: var(--header-sticky-height, 72px);
+            z-index: 18;
+            display: none;
+            max-height: calc(100vh - var(--header-sticky-height, 72px) - 8px);
+            overflow-y: auto;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 8px 18px rgba(56, 63, 54, 0.12);
+            overscroll-behavior: contain;
+        }
+
+        /* Muestra el panel cuando el usuario toca el boton de herramientas. */
+        .tools-panel.show {
+            display: block;
+        }
+
+        /* Quita sticky interno porque ahora manda el panel desplegable. */
+        .tools-panel .controls,
+        .tools-panel .decoder {
+            position: static;
+            top: auto;
         }
 
         /* Barra de contadores y avisos. */
@@ -297,10 +310,12 @@
             border-bottom: 1px solid var(--border);
         }
 
+        /* Muestra el reporte cuando el usuario lo solicita. */
         .report-panel.show {
             display: block;
         }
 
+        /* Cabecera compacta del reporte. */
         .report-head {
             display: flex;
             align-items: center;
@@ -311,6 +326,7 @@
             width: min(100%, 1680px);
         }
 
+        /* Titulo del reporte. */
         .report-title {
             display: grid;
             gap: 3px;
@@ -326,12 +342,14 @@
             font-size: 0.82rem;
         }
 
+        /* Botones del reporte. */
         .report-actions {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
         }
 
+        /* Lista interna del reporte. */
         .report-content {
             width: min(100%, 1680px);
             margin: 0 auto;
@@ -368,6 +386,19 @@
             border-color: #dfbbb4;
             background: var(--danger-soft);
             color: var(--danger);
+        }
+
+        /* Contador de posicion del mueble dentro del lote. */
+        .index-tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 22px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #eef3ef;
+            color: #4d5a52;
+            font-size: 0.74rem;
+            font-weight: 800;
         }
 
         /* Chip de advertencias. */
@@ -460,16 +491,6 @@
             font-weight: 850;
             color: var(--primary);
             word-break: break-word;
-        }
-
-        .table-index {
-            display: block;
-            width: 100%;
-            color: var(--muted);
-            font-size: 0.72rem;
-            font-weight: 700;
-            line-height: 1;
-            white-space: nowrap;
         }
 
         /* Linea del codigo con ubicacion al lado. */
@@ -835,9 +856,6 @@
 
             .controls {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-                max-height: 42vh;
-                overflow-y: auto;
-                overscroll-behavior: contain;
                 padding-top: 12px;
                 padding-bottom: 12px;
             }
@@ -926,12 +944,7 @@
             }
 
             .header-actions .file-label {
-                flex: 1 1 100%;
-            }
-
-            .check-option {
-                justify-content: center;
-                width: 100%;
+                flex: 1 1 auto;
             }
 
             .controls,
@@ -1032,7 +1045,6 @@
             <h1>Validador de Despiece</h1>
             <!-- Nombre del documento cargado o instruccion inicial. -->
             <p id="document-name">Carga un archivo Excel o CSV para comenzar.</p>
-            <p id="app-version">Reglas v2026.07.04</p>
         </div>
 
         <!-- Acciones fijas de cabecera. -->
@@ -1041,6 +1053,8 @@
             <span class="chip ok" id="chip-ok" style="display:none"></span>
             <!-- Cantidad de muebles con errores. -->
             <span class="chip err" id="chip-err" style="display:none"></span>
+            <!-- Boton que despliega filtros y herramientas sin mover la cabecera fija. -->
+            <button type="button" class="btn btn-tools-toggle" id="btn-tools-toggle" aria-expanded="false" aria-controls="tools-panel">Filtros y herramientas</button>
             <!-- Label que funciona como boton para abrir el input de archivo. -->
             <label class="file-label" for="upload" title="Cargar archivo Excel o CSV">
                 <!-- Icono sencillo de carga. -->
@@ -1058,51 +1072,50 @@
         <input type="file" id="upload" accept=".xlsx,.xls,.csv">
     </header>
 
-    <!-- Filtros y botones principales. -->
-    <section class="controls" aria-label="Filtros y acciones">
-        <!-- Filtro universal 1. -->
-        <input type="text" class="f-input" id="f1" placeholder="Filtro 1: codigo, pieza, OP..." autocomplete="off">
-        <!-- Filtro universal 2. -->
-        <input type="text" class="f-input" id="f2" placeholder="Filtro 2" autocomplete="off">
-        <!-- Filtro universal 3. -->
-        <input type="text" class="f-input" id="f3" placeholder="Filtro 3" autocomplete="off">
-        <!-- Filtro universal 4. -->
-        <input type="text" class="f-input" id="f4" placeholder="Filtro 4" autocomplete="off">
-        <!-- Boton que ejecuta la validacion dimensional. -->
-        <button type="button" class="btn btn-primary" id="btn-validar">Validar estructura</button>
-        <label class="check-option" title="Ejecuta la validacion al terminar la carga del archivo">
-            <input type="checkbox" id="auto-validar">
-            Auto validar
-        </label>
-        <!-- Boton que borra los filtros activos. -->
-        <button type="button" class="btn btn-secondary" id="btn-limpiar">Limpiar</button>
-        <button type="button" class="btn btn-secondary" id="btn-exportar" disabled>Mostrar reporte</button>
-        <!-- Boton que activa el modo de comparacion entre dos archivos. -->
-        <button type="button" class="btn btn-secondary" id="btn-modo-comparar">Comparar archivos</button>
-    </section>
+    <!-- Panel desplegable con filtros, consulta y comparacion. -->
+    <div class="tools-panel" id="tools-panel">
+        <!-- Filtros y botones principales. -->
+        <section class="controls" aria-label="Filtros y acciones">
+            <!-- Filtro universal 1. -->
+            <input type="text" class="f-input" id="f1" placeholder="Filtro 1: codigo, pieza, OP..." autocomplete="off">
+            <!-- Filtro universal 2. -->
+            <input type="text" class="f-input" id="f2" placeholder="Filtro 2" autocomplete="off">
+            <!-- Filtro universal 3. -->
+            <input type="text" class="f-input" id="f3" placeholder="Filtro 3" autocomplete="off">
+            <!-- Filtro universal 4. -->
+            <input type="text" class="f-input" id="f4" placeholder="Filtro 4" autocomplete="off">
+            <!-- Boton que ejecuta la validacion dimensional. -->
+            <button type="button" class="btn btn-primary" id="btn-validar">Validar estructura</button>
+            <!-- Boton que borra los filtros activos. -->
+            <button type="button" class="btn btn-secondary" id="btn-limpiar">Limpiar</button>
+            <!-- Boton que activa el modo de comparacion entre dos archivos. -->
+            <button type="button" class="btn btn-secondary" id="btn-modo-comparar">Comparar archivos</button>
+            <!-- Boton que muestra un reporte visual solo con errores. -->
+            <button type="button" class="btn btn-secondary" id="btn-reporte">Mostrar reporte</button>
+        </section>
 
-    <!-- Consultor independiente para descifrar un codigo de mueble manualmente. -->
-    <section class="decoder" aria-label="Consultor de codigo de mueble">
-        <!-- Entrada del codigo que se quiere consultar. -->
-        <input type="text" class="f-input" id="codigo-consulta" placeholder="Consultar codigo: BAR63H12P6.7S/P-PM..." autocomplete="off">
-        <!-- Resultado de lectura del codigo. -->
-        <div class="decoder-result" id="resultado-codigo">Escribe un codigo para ver como se lee.</div>
-    </section>
+        <!-- Consultor independiente para descifrar un codigo de mueble manualmente. -->
+        <section class="decoder" aria-label="Consultor de codigo de mueble">
+            <!-- Entrada del codigo que se quiere consultar. -->
+            <input type="text" class="f-input" id="codigo-consulta" placeholder="Consultar codigo: BAR63H12P6.7S/P-PM..." autocomplete="off">
+            <!-- Resultado de lectura del codigo. -->
+            <div class="decoder-result" id="resultado-codigo">Escribe un codigo para ver como se lee.</div>
+        </section>
 
-    <!-- Panel para comparar un archivo base contra otro archivo. -->
-    <section class="compare-panel" id="compare-panel" aria-label="Comparacion de archivos">
-        <!-- Boton para cargar archivo base. -->
-        <label class="file-label" for="upload-base" title="Cargar archivo base para comparar">1. Archivo base</label>
-        <!-- Input oculto del archivo base. -->
-        <input type="file" id="upload-base" accept=".xlsx,.xls,.csv">
-        <!-- Boton para cargar archivo a comparar; se activa despues del archivo base. -->
-        <label class="file-label disabled" id="label-upload-comparar" for="upload-comparar" title="Cargar segundo archivo">2. Archivo a comparar</label>
-        <!-- Input oculto del segundo archivo. -->
-        <input type="file" id="upload-comparar" accept=".xlsx,.xls,.csv" disabled>
-        <button type="button" class="btn btn-secondary" id="btn-exportar-comparacion" disabled>Exportar comparacion</button>
-        <!-- Resultado de comparacion. -->
-        <div class="compare-result" id="compare-result">Activa el modo y carga un archivo base para comenzar.</div>
-    </section>
+        <!-- Panel para comparar un archivo base contra otro archivo. -->
+        <section class="compare-panel" id="compare-panel" aria-label="Comparacion de archivos">
+            <!-- Boton para cargar archivo base. -->
+            <label class="file-label" for="upload-base" title="Cargar archivo base para comparar">1. Archivo base</label>
+            <!-- Input oculto del archivo base. -->
+            <input type="file" id="upload-base" accept=".xlsx,.xls,.csv">
+            <!-- Boton para cargar archivo a comparar; se activa despues del archivo base. -->
+            <label class="file-label disabled" id="label-upload-comparar" for="upload-comparar" title="Cargar segundo archivo">2. Archivo a comparar</label>
+            <!-- Input oculto del segundo archivo. -->
+            <input type="file" id="upload-comparar" accept=".xlsx,.xls,.csv" disabled>
+            <!-- Resultado de comparacion. -->
+            <div class="compare-result" id="compare-result">Activa el modo y carga un archivo base para comenzar.</div>
+        </section>
+    </div>
 
     <!-- Contadores de resultado y estado. -->
     <section class="stats-bar" id="stats-bar" aria-live="polite">

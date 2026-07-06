@@ -23,12 +23,10 @@ function validarTodo() {
                 // Aplica estado visual segun resultado.
                 if (errores.length > 0) {
                     card.classList.add("err");
-                    card.dataset.estadoValidacion = "Error";
                     mostrarErroresEnTarjeta(card, errores);
                     countErr++;
                 } else {
                     card.classList.add("ok");
-                    card.dataset.estadoValidacion = "OK";
                     countOk++;
                 }
 
@@ -84,7 +82,8 @@ function validarMueble(card) {
             const grosorRespaldo = obtenerGrosorRespaldoDesdeCard(card);
 
             // Calcula ancho interno de base/techo/ajustes.
-            const anchoInterno = ancho > 0 ? ancho - (grosor * 2) - 1 : 0;
+            const anchoInternoBase = ancho > 0 ? ancho - (grosor * 2) - 1 : 0;
+            const anchoInterno = ajustarAnchoInternoEspecial(card.dataset.tipoModulo || "", cod, anchoInternoBase);
 
             // Analiza OTP/OA como pareja de piezas antes de validar fila por fila.
             const contextoOrejas = analizarParejaOtpOa(card, alto, cod);
@@ -126,7 +125,7 @@ function validarMueble(card) {
                 });
 
                 if (!validacion.ok) {
-                    errores.push(`Fila ${numeroFila}: ${pieza} ${validacion.mensaje} ${describirDiferenciaMedidas(medida1, medida2, validacion.objetivos || [])}`);
+                    errores.push(`Fila ${numeroFila}: ${pieza} ${validacion.mensaje} Medidas encontradas: ${formatearMedida(medida1)} x ${formatearMedida(medida2)} mm.`);
                     filaConError = true;
                 }
 
@@ -161,7 +160,6 @@ function validarMueble(card) {
 function limpiarEstadoValidacion(card) {
             // Quita clases de estado.
             card.classList.remove("err", "ok");
-            card.dataset.estadoValidacion = "";
 
             // Quita marcas de filas con error.
             card.querySelectorAll(".row-error").forEach(row => row.classList.remove("row-error"));
@@ -252,27 +250,6 @@ function marcarMedidasValidas(tr, objetivos) {
             });
         }
 
-function describirDiferenciaMedidas(medida1, medida2, objetivos) {
-            const medidas = [medida1, medida2].filter(Number.isFinite);
-            const esperadas = objetivos.filter(valor => Number.isFinite(valor) && valor > 0);
-            const encontradas = medidas.length ? medidas.map(formatearMedida).join(" x ") : "-";
-            const esperadasTexto = esperadas.length ? esperadas.map(formatearMedida).join(" x ") : "-";
-
-            if (!medidas.length || !esperadas.length) {
-                return `Esperado: ${esperadasTexto} mm. Encontrado: ${encontradas} mm.`;
-            }
-
-            const diferencias = medidas.map(medida => {
-                const mejor = esperadas.reduce((actual, esperado) => {
-                    const delta = Math.abs(medida - esperado);
-                    return delta < actual ? delta : actual;
-                }, Number.POSITIVE_INFINITY);
-                return Number.isFinite(mejor) ? Math.round(mejor * 10) / 10 : 0;
-            });
-
-            return `Esperado: ${esperadasTexto} mm. Encontrado: ${encontradas} mm. Diferencia minima: ${diferencias.join(" / ")} mm.`;
-        }
-
 function obtenerProfundidadEsperada(tipo) {
             // Usa la misma regla de profundidad de estructura que muestra el encabezado.
             return profundidadPorDefecto(tipo) || 580;
@@ -299,7 +276,7 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
 
             if (esTapaDecorativa(nombre)) {
                 const medidaA = modulo.ancho || modulo.anchoInterno;
-                const medidaB = modulo.profundidad || modulo.alto;
+                const medidaB = modulo.profundidadTotal || modulo.profundidad || modulo.alto;
                 if (!medidaA || !medidaB) return { ok: true, mensaje: "", valida: false };
 
                 const ok = coincideParMedidas(medida1, medida2, medidaA, medidaB);
@@ -427,6 +404,19 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
 
             if (esFrenteCajon(nombre)) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
+
+                if (esModuloFld(modulo)) {
+                    const altoFrenteCompleto = modulo.alto || modulo.profundidad;
+                    if (!altoFrenteCompleto) return { ok: true, mensaje: "", valida: false };
+
+                    const okCompleto = coincideParMedidas(medida1, medida2, modulo.ancho, altoFrenteCompleto);
+                    return {
+                        ok: okCompleto,
+                        mensaje: `deberia medir ${modulo.ancho} x ${altoFrenteCompleto} mm como frente completo FLD.`,
+                        valida: true,
+                        objetivos: [modulo.ancho, altoFrenteCompleto]
+                    };
+                }
 
                 const anchoFrente = modulo.ancho - 3;
                 const ok = coincideMedida(medida1, anchoFrente) || coincideMedida(medida2, anchoFrente);
@@ -747,6 +737,17 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esLateral(nombre)) {
                 const altoLateral = alturaUtilModulo(modulo);
                 const profundidadLateral = profundidadLateralModulo(modulo);
+
+                if (altoLateral && !profundidadLateral && modulo.ancho) {
+                    const okDosDimensiones = coincideParMedidas(medida1, medida2, altoLateral, modulo.ancho);
+                    return {
+                        ok: okDosDimensiones,
+                        mensaje: `deberia medir ${altoLateral} x ${modulo.ancho} mm segun las dos dimensiones detectadas del codigo.`,
+                        valida: true,
+                        objetivos: [altoLateral, modulo.ancho]
+                    };
+                }
+
                 if (!altoLateral || !profundidadLateral) return { ok: true, mensaje: "", valida: false };
 
                 const ok = coincideParMedidas(medida1, medida2, altoLateral, profundidadLateral);
@@ -850,7 +851,7 @@ function obtenerGrosorRespaldoDesdeCard(card) {
 
 function profundidadRepisaMovil(modulo) {
             const profundidad = Number(modulo.profundidad) || 0;
-            const ajusteAlto = esModuloAlto(modulo) ? 40 : 0;
+            const ajusteAlto = profundidad === 320 ? 40 : 0;
 
             return profundidad > 110 ? profundidad - 110 + ajusteAlto : profundidad;
         }
@@ -862,6 +863,21 @@ function esModuloAlto(modulo) {
 
 function esModuloBar(modulo) {
             return String(modulo && modulo.tipo || "").toUpperCase() === "BAR";
+        }
+
+function esModuloFld(modulo) {
+            return String(modulo && modulo.tipo || "").toUpperCase().startsWith("FLD");
+        }
+
+function ajustarAnchoInternoEspecial(tipo, cod, anchoInternoBase) {
+            const familia = String(tipo || "").toUpperCase();
+            const anchoInterno = Number(anchoInternoBase) || 0;
+
+            if (familia.startsWith("FVLB") && anchoInterno > 100) {
+                return anchoInterno - 100;
+            }
+
+            return anchoInterno;
         }
 
 function tieneNivelador(cod) {
@@ -909,17 +925,16 @@ function altoBaseOreja(modulo) {
         }
 
 function alturasPermitidasOreja(modulo, tipoOreja) {
-            const base = altoBaseOreja(modulo);
+            const base = tipoOreja === "OA" ? (Number(modulo && modulo.alto) || 0) : altoBaseOreja(modulo);
             if (!base) return [];
 
             const contexto = modulo.contextoOrejas || {};
-            if (!contexto.emparejadas) return tieneHenzo(modulo.cod) ? [base - 3] : [base];
+            if (tipoOreja === "OTP") return [base - 3];
+            if (tipoOreja === "OA") return [base];
 
-            const descuento = contexto.descuentoEn || "";
-            if (descuento === "OTP") return tipoOreja === "OTP" ? [base - 3] : [base];
-            if (descuento === "OA") return tipoOreja === "OA" ? [base - 3] : [base];
+            if (!contexto.emparejadas) return [base];
 
-            return [base, base - 3];
+            return [base];
         }
 
 function anchosPermitidosOreja(modulo) {
@@ -979,6 +994,10 @@ function profundidadLateralModulo(modulo) {
             const tipo = String(modulo && modulo.tipo || "").toUpperCase();
             const profundidadTotal = Number(modulo && modulo.profundidadTotal) || 0;
             const profundidad = Number(modulo && modulo.profundidad) || 0;
+
+            if (tipo.startsWith("FVLB")) {
+                return profundidadTotal || profundidad || 150;
+            }
 
             if (tipo.startsWith("LA") || tipo.startsWith("LX") || tipo.startsWith("LB") || tipo.startsWith("FB") || tipo.startsWith("FX")) {
                 return profundidadTotal || profundidad;

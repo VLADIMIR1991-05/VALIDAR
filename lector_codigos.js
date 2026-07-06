@@ -408,7 +408,8 @@ function extraerAlturaMm(texto) {
             const desdeDb = DB[codigo] ? String(DB[codigo]).match(/(\d+(?:\.\d+)?)\s*mm/i) : null;
             if (desdeDb) return Math.round(Number.parseFloat(desdeDb[1]));
 
-            return convertirNumeroCodigoAMm(match[1]);
+            const alturaMm = convertirNumeroCodigoAMm(match[1]);
+            return alturaMm > 0 && alturaMm < 60 ? alturaMm * 10 : alturaMm;
         }
 
 function extraerProfundidadMm(texto) {
@@ -492,7 +493,9 @@ function traducirAltura(altura) {
             if (!match) return codigoAltura;
 
             // Convierte H36 en 360mm, H72 en 720mm, etc.
-            const mm = Number.parseFloat(match[1].replace(",", ".")) * 10;
+            const numeroAltura = Number.parseFloat(match[1].replace(",", "."));
+            const mmBase = numeroAltura * 10;
+            const mm = mmBase > 0 && mmBase < 60 ? mmBase * 10 : mmBase;
 
             // Devuelve descripcion clara.
             return `Altura ${codigoAltura} (${mm}mm)`;

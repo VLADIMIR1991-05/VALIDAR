@@ -100,8 +100,6 @@
         // Descuento usado para ancho de base/techo: 18mm x 2 laterales + 1mm fuga.
         const DESCUENTO_ANCHO = 37;
 
-        const VERSION_REGLAS = "2026.07.04";
-
         // Guarda todas las filas originales cargadas desde el archivo.
         let DATA_GLOBAL = [];
 
@@ -129,8 +127,6 @@
         // Guarda si el panel de reporte esta abierto.
         let REPORTE_VISIBLE = false;
 
-        let ULTIMO_RESULTADO_COMPARACION = null;
-
         // Referencias a elementos principales para no buscarlos repetidamente.
         const uploadEl = document.getElementById("upload");
         const listaEl = document.getElementById("lista");
@@ -145,15 +141,17 @@
         const uploadCompararEl = document.getElementById("upload-comparar");
         const labelUploadCompararEl = document.getElementById("label-upload-comparar");
         const documentNameEl = document.getElementById("document-name");
-        const autoValidarEl = document.getElementById("auto-validar");
-        const exportarEl = document.getElementById("btn-exportar");
-        const exportarComparacionEl = document.getElementById("btn-exportar-comparacion");
         const reportePanelEl = document.getElementById("reporte-panel");
         const reporteContenidoEl = document.getElementById("reporte-contenido");
         const reporteResumenEl = document.getElementById("reporte-resumen");
+        const toolsPanelEl = document.getElementById("tools-panel");
+        const toolsToggleEl = document.getElementById("btn-tools-toggle");
 
         // Conecta el evento de carga de archivo con su funcion.
         uploadEl.addEventListener("change", manejarArchivoSeleccionado);
+
+        // Abre o cierra filtros, consulta y herramientas.
+        toolsToggleEl.addEventListener("click", alternarPanelHerramientas);
 
         // Conecta cada filtro con la funcion de filtrado.
         ["f1", "f2", "f3", "f4"].forEach(id => {
@@ -169,7 +167,14 @@
         // Conecta el boton de limpieza.
         document.getElementById("btn-limpiar").addEventListener("click", limpiarFiltros);
 
-        exportarEl.addEventListener("click", exportarReporteValidacion);
+        // Permite consultar el codigo tambien al escribir.
+        document.getElementById("codigo-consulta").addEventListener("input", consultarCodigoMueble);
+
+        // Activa o desactiva el panel de comparacion.
+        document.getElementById("btn-modo-comparar").addEventListener("click", alternarModoComparacion);
+
+        // Muestra reporte visual solo con errores.
+        document.getElementById("btn-reporte").addEventListener("click", mostrarReporteErrores);
 
         // Imprime el reporte para guardarlo como PDF.
         document.getElementById("btn-reporte-pdf").addEventListener("click", descargarReportePdf);
@@ -180,24 +185,24 @@
         // Cierra el panel de reporte.
         document.getElementById("btn-reporte-cerrar").addEventListener("click", cerrarReporteErrores);
 
-        // Permite consultar el codigo tambien al escribir.
-        document.getElementById("codigo-consulta").addEventListener("input", consultarCodigoMueble);
-
-        // Activa o desactiva el panel de comparacion.
-        document.getElementById("btn-modo-comparar").addEventListener("click", alternarModoComparacion);
-
         // Carga el archivo base de comparacion.
         uploadBaseEl.addEventListener("change", manejarArchivoBaseComparacion);
 
         // Carga el archivo secundario y ejecuta la comparacion.
         uploadCompararEl.addEventListener("change", manejarArchivoComparar);
 
-        exportarComparacionEl.addEventListener("click", exportarReporteComparacion);
-
         // Mantiene los controles fijos con alturas reales, tambien en movil.
         window.addEventListener("resize", actualizarOffsetsPegados);
         window.addEventListener("orientationchange", actualizarOffsetsPegados);
         actualizarOffsetsPegados();
+
+        // Alterna el panel desplegable de filtros y herramientas.
+        function alternarPanelHerramientas() {
+            const abierto = toolsPanelEl.classList.toggle("show");
+            toolsToggleEl.setAttribute("aria-expanded", abierto ? "true" : "false");
+            toolsToggleEl.textContent = abierto ? "Ocultar herramientas" : "Filtros y herramientas";
+            actualizarOffsetsPegados();
+        }
 
         // Lee el archivo seleccionado por el usuario.
         function manejarArchivoSeleccionado(event) {
@@ -240,8 +245,6 @@
 
                     // Dibuja los datos en pantalla.
                     renderizar(DATA_GLOBAL);
-
-                    if (autoValidarEl.checked) validarTodo();
                 })
                 .catch(error => {
                     // Muestra un mensaje claro si el archivo no se pudo interpretar.
@@ -1009,16 +1012,17 @@
             if (data.length === 0) {
                 mostrarEstadoVacio("Sin resultados", "No hay muebles que coincidan con los filtros.");
                 actualizarStats(0, 0);
-                exportarEl.disabled = true;
                 return;
             }
 
             // Agrupa las filas por OP y luego por codigo de mueble.
             const porOP = agruparPorOpYMueble(data);
-            const totalEstimado = Object.values(porOP).reduce((total, muebles) => total + Object.keys(muebles).length, 0);
 
             // Cuenta cuantos muebles se van creando.
             let totalMuebles = 0;
+
+            // Total de muebles del lote para mostrar posicion tipo 1/237.
+            const totalMueblesLote = Object.keys(porOP).reduce((total, op) => total + Object.keys(porOP[op]).length, 0);
 
             // Crea un fragmento para insertar todo de una sola vez.
             const fragment = document.createDocumentFragment();
@@ -1038,10 +1042,9 @@
                 Object.keys(porOP[op]).sort((a, b) => compararMueblesPorEspecial(porOP[op], a, b)).forEach(cod => {
                     // Toma las piezas del mueble.
                     const items = porOP[op][cod];
-                    const numeroMueble = totalMuebles + 1;
 
                     // Crea la tarjeta visual.
-                    const tarjeta = crearTarjetaMueble(op, cod, items, numeroMueble, totalEstimado);
+                    const tarjeta = crearTarjetaMueble(op, cod, items, totalMuebles + 1, totalMueblesLote);
 
                     // Agrega la tarjeta al bloque de OP.
                     opBlock.appendChild(tarjeta);
@@ -1062,7 +1065,6 @@
 
             // Actualiza contadores.
             actualizarStats(totalMuebles, totalMuebles);
-            exportarEl.disabled = totalMuebles === 0;
 
             // Aplica filtros activos si existian.
             filtrarUniversal();
@@ -1159,7 +1161,7 @@
         }
 
         // Crea la tarjeta de un mueble con encabezado, tabla y zona de validacion.
-        function crearTarjetaMueble(op, cod, items, numeroMueble, totalMuebles) {
+        function crearTarjetaMueble(op, cod, items, indiceMueble = 0, totalMueblesLote = 0) {
             // Calcula descripcion del codigo.
             const nombre = obtenerNombre(cod);
 
@@ -1205,14 +1207,12 @@
             card.dataset.codpuro = cod;
             card.dataset.tipo = tipoVal.toUpperCase();
             card.dataset.op = op;
-            card.dataset.numeroMueble = String(numeroMueble);
-            card.dataset.totalMuebles = String(totalMuebles);
             card.dataset.universal = textoUniversal;
             card.dataset.piezas = String(items.length);
             card.dataset.especial = especiales.length ? "1" : "0";
 
             // Crea encabezado visual.
-            card.appendChild(crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales, numeroMueble, totalMuebles));
+            card.appendChild(crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales, indiceMueble, totalMueblesLote));
 
             // Crea contenedor para errores de validacion.
             const validationList = crearElemento("div", "validation-list");
@@ -1227,7 +1227,7 @@
         }
 
         // Crea el encabezado de una tarjeta.
-        function crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales = [], numeroMueble = 0, totalMuebles = 0) {
+        function crearEncabezadoMueble(op, cod, nombre, tipoVal, materialNombre, ubicacion, grosorMaterial, especiales = [], indiceMueble = 0, totalMueblesLote = 0) {
             // Crea contenedor de encabezado.
             const header = crearElemento("div", "mueble-header");
 
@@ -1237,12 +1237,11 @@
             // Crea linea de codigo y ubicacion.
             const codLine = crearElemento("div", "cod-line");
 
-            if (numeroMueble && totalMuebles) {
-                codLine.appendChild(crearElemento("span", "table-index", `${numeroMueble}/${totalMuebles}`));
-            }
-
             // Crea codigo visible.
             codLine.appendChild(crearElemento("div", "cod-mueble", cod));
+
+            // Agrega posicion del mueble dentro del lote.
+            if (indiceMueble && totalMueblesLote) codLine.appendChild(crearElemento("span", "index-tag", `${indiceMueble}/${totalMueblesLote}`));
 
             // Agrega dimensiones interpretadas al lado del codigo si existen.
             const dimensiones = obtenerDimensionesCodigo(cod);
@@ -1413,6 +1412,166 @@
             filtrarUniversal();
         }
 
+        // Ajusta los top sticky usando la altura real de cabecera y filtros.
+        function actualizarOffsetsPegados() {
+            const header = document.querySelector(".header");
+            const controls = document.querySelector(".controls");
+            const headerHeight = header ? Math.ceil(header.getBoundingClientRect().height) : 72;
+            const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) : 67;
+            document.documentElement.style.setProperty("--header-sticky-height", `${headerHeight}px`);
+            document.documentElement.style.setProperty("--controls-sticky-height", `${controlsHeight}px`);
+        }
+
+        // Abre el reporte visual con solo tarjetas en error.
+        function mostrarReporteErrores() {
+            if (DATA_GLOBAL.length === 0) {
+                mostrarErrorGeneral("Carga un archivo antes de mostrar el reporte.");
+                return;
+            }
+
+            if (!VALIDADO) validarTodo();
+            REPORTE_VISIBLE = true;
+            construirReporteErrores();
+            reportePanelEl.classList.add("show");
+            document.getElementById("btn-reporte").textContent = "Actualizar reporte";
+            reportePanelEl.scrollIntoView({ behavior: "smooth", block: "start" });
+            actualizarOffsetsPegados();
+        }
+
+        // Cierra el reporte sin tocar la vista principal.
+        function cerrarReporteErrores() {
+            REPORTE_VISIBLE = false;
+            if (reportePanelEl) reportePanelEl.classList.remove("show");
+            if (reporteContenidoEl) reporteContenidoEl.textContent = "";
+            if (reporteResumenEl) reporteResumenEl.textContent = "Valida el archivo y pulsa Mostrar reporte.";
+            const boton = document.getElementById("btn-reporte");
+            if (boton) boton.textContent = "Mostrar reporte";
+        }
+
+        // Construye el reporte con la misma jerarquia OP > mueble, solo errores.
+        function construirReporteErrores() {
+            reporteContenidoEl.textContent = "";
+            const tarjetasError = Array.from(listaEl.querySelectorAll(".mueble-container.err"));
+
+            if (tarjetasError.length === 0) {
+                reporteResumenEl.textContent = "No hay muebles con error en la validacion actual.";
+                reporteContenidoEl.appendChild(crearElemento("div", "empty", "Sin errores para reportar."));
+                return;
+            }
+
+            reporteResumenEl.textContent = `${tarjetasError.length} muebles con error. ${documentNameEl.textContent}`;
+            const grupos = new Map();
+
+            tarjetasError.forEach(card => {
+                const op = card.dataset.op || "Sin OP";
+                if (!grupos.has(op)) grupos.set(op, []);
+                grupos.get(op).push(card);
+            });
+
+            Array.from(grupos.keys()).sort(compararNatural).forEach(op => {
+                const block = crearElemento("section", "op-block");
+                block.appendChild(crearElemento("div", "op-title", `OP: ${op}`));
+
+                grupos.get(op).forEach(card => {
+                    const copia = card.cloneNode(true);
+                    copia.style.display = "";
+                    copia.classList.add("report-card");
+                    block.appendChild(copia);
+                });
+
+                reporteContenidoEl.appendChild(block);
+            });
+        }
+
+        // Abre impresion enfocada al reporte para guardar como PDF.
+        function descargarReportePdf() {
+            if (!REPORTE_VISIBLE) mostrarReporteErrores();
+            document.body.classList.add("report-printing");
+            window.setTimeout(() => window.print(), 100);
+            window.setTimeout(() => document.body.classList.remove("report-printing"), 1200);
+        }
+
+        // Exporta a Excel los errores y las piezas visibles dentro del reporte.
+        function descargarReporteExcel() {
+            if (!window.XLSX) {
+                alert("No se pudo cargar la libreria de Excel.");
+                return;
+            }
+
+            if (!REPORTE_VISIBLE) mostrarReporteErrores();
+            const cards = Array.from(reporteContenidoEl.querySelectorAll(".mueble-container.err"));
+            if (cards.length === 0) {
+                alert("No hay errores para exportar.");
+                return;
+            }
+
+            const filas = [];
+            cards.forEach(card => {
+                const errores = Array.from(card.querySelectorAll(".validation-item")).map(el => limpiarTexto(el.textContent)).join(" | ");
+                const codigo = card.dataset.codpuro || limpiarTexto(card.querySelector(".cod-mueble")?.textContent || "");
+                const op = card.dataset.op || "";
+                const dimensiones = limpiarTexto(card.querySelector(".dim-tag")?.textContent || "");
+                const grosor = limpiarTexto(card.querySelector(".thickness-tag")?.textContent || "");
+                const ubicacion = limpiarTexto(card.querySelector(".ubi-tag")?.textContent || "");
+                const material = limpiarTexto(card.querySelector(".material-tag")?.textContent || "");
+
+                filas.push({
+                    bloque: "MUEBLE",
+                    op,
+                    codigo,
+                    dimensiones,
+                    grosor,
+                    ubicacion,
+                    material,
+                    errores,
+                    job: "",
+                    cod_pieza: "",
+                    cant_piezas: "",
+                    medida1: "",
+                    medida2: "",
+                    l1: "",
+                    l2: "",
+                    c1: "",
+                    c2: "",
+                    nomueble: ""
+                });
+
+                const headers = Array.from(card.querySelectorAll("thead th")).map(th => limpiarTexto(th.textContent));
+                card.querySelectorAll("tbody tr").forEach(row => {
+                    const cells = Array.from(row.querySelectorAll("td")).map(td => limpiarTexto(td.textContent));
+                    const pieza = { bloque: "PIEZA", op, codigo, dimensiones: "", grosor: "", ubicacion: "", material: "", errores: "" };
+                    headers.forEach((header, index) => {
+                        pieza[header.toLowerCase()] = cells[index] || "";
+                    });
+                    filas.push(pieza);
+                });
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(filas);
+            ws["!cols"] = [
+                { wch: 10 }, { wch: 12 }, { wch: 28 }, { wch: 18 }, { wch: 10 }, { wch: 12 },
+                { wch: 34 }, { wch: 80 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 10 },
+                { wch: 10 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 10 }
+            ];
+            XLSX.utils.book_append_sheet(wb, ws, "Errores");
+            XLSX.writeFile(wb, `reporte_errores_${fechaArchivo()}.xlsx`);
+        }
+
+        // Limpia espacios para exportaciones.
+        function limpiarTexto(texto) {
+            return String(texto || "").replace(/\s+/g, " ").trim();
+        }
+
+        // Fecha corta para nombres de archivo.
+        function fechaArchivo() {
+            const hoy = new Date();
+            const y = hoy.getFullYear();
+            const m = String(hoy.getMonth() + 1).padStart(2, "0");
+            const d = String(hoy.getDate()).padStart(2, "0");
+            return `${y}${m}${d}`;
+        }
+
         // Muestra el nombre del documento cargado bajo el titulo principal.
         function actualizarNombreDocumento(nombre) {
             documentNameEl.textContent = nombre ? `Documento: ${nombre}` : "Carga un archivo Excel o CSV para comenzar.";
@@ -1444,8 +1603,6 @@
             // Limpia estado previo de comparacion.
             DATA_ARCHIVO_COMPARAR = [];
             MAPA_ARCHIVO_COMPARAR = {};
-            ULTIMO_RESULTADO_COMPARACION = null;
-            exportarComparacionEl.disabled = true;
             uploadCompararEl.value = "";
             uploadCompararEl.disabled = true;
             labelUploadCompararEl.classList.add("disabled");
@@ -1464,7 +1621,6 @@
                     actualizarNombreDocumento(file.name);
                     mostrarAvisosDeColumnas();
                     renderizar(DATA_GLOBAL);
-                    if (autoValidarEl.checked) validarTodo();
 
                     // Habilita segundo archivo.
                     uploadCompararEl.disabled = false;
@@ -1494,7 +1650,6 @@
                     DATA_ARCHIVO_COMPARAR = data;
                     MAPA_ARCHIVO_COMPARAR = data.length > 0 ? crearMapaColumnas(Object.keys(data[0]), data) : {};
                     const resultado = compararArchivos(DATA_BASE_COMPARACION, MAPA_BASE_COMPARACION, DATA_ARCHIVO_COMPARAR, MAPA_ARCHIVO_COMPARAR);
-                    ULTIMO_RESULTADO_COMPARACION = resultado;
                     mostrarResultadoComparacion(resultado, file.name);
                 })
                 .catch(error => {
@@ -1598,7 +1753,6 @@
         function mostrarResultadoComparacion(resultado, nombreArchivo) {
             // Crea texto resumen.
             compareResultEl.textContent = `Comparado con ${nombreArchivo}: ${resultado.faltan.length} faltan, ${resultado.sobran.length} sobran, ${resultado.cambiadas.length} cambiadas. Piezas base: ${resultado.baseTotal}. Piezas comparadas: ${resultado.compararTotal}.`;
-            exportarComparacionEl.disabled = false;
 
             // Limpia avisos anteriores.
             limpiarAvisos();
@@ -1618,203 +1772,6 @@
             // Inserta detalle como texto.
             detalle.textContent = partes.join(" | ");
             avisosEl.appendChild(detalle);
-        }
-
-        function exportarReporteValidacion() {
-            mostrarReporteErrores();
-        }
-
-        // Ajusta los top sticky usando la altura real de cabecera y filtros.
-        function actualizarOffsetsPegados() {
-            const header = document.querySelector(".header");
-            const controls = document.querySelector(".controls");
-            const headerHeight = header ? Math.ceil(header.getBoundingClientRect().height) : 72;
-            const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) : 67;
-            document.documentElement.style.setProperty("--header-sticky-height", `${headerHeight}px`);
-            document.documentElement.style.setProperty("--controls-sticky-height", `${controlsHeight}px`);
-        }
-
-        // Abre el reporte visual con solo tarjetas en error.
-        function mostrarReporteErrores() {
-            if (DATA_GLOBAL.length === 0) {
-                mostrarErrorGeneral("Carga un archivo antes de mostrar el reporte.");
-                return;
-            }
-
-            if (!VALIDADO) validarTodo();
-            REPORTE_VISIBLE = true;
-            construirReporteErrores();
-            reportePanelEl.classList.add("show");
-            exportarEl.textContent = "Actualizar reporte";
-            reportePanelEl.scrollIntoView({ behavior: "smooth", block: "start" });
-            actualizarOffsetsPegados();
-        }
-
-        // Cierra el reporte sin tocar la vista principal.
-        function cerrarReporteErrores() {
-            REPORTE_VISIBLE = false;
-            if (reportePanelEl) reportePanelEl.classList.remove("show");
-            if (reporteContenidoEl) reporteContenidoEl.textContent = "";
-            if (reporteResumenEl) reporteResumenEl.textContent = "Valida el archivo y pulsa Mostrar reporte.";
-            if (exportarEl) exportarEl.textContent = "Mostrar reporte";
-        }
-
-        // Construye el reporte con la misma jerarquia OP > mueble, solo errores.
-        function construirReporteErrores() {
-            reporteContenidoEl.textContent = "";
-            const tarjetasError = Array.from(listaEl.querySelectorAll(".mueble-container.err"));
-
-            if (tarjetasError.length === 0) {
-                reporteResumenEl.textContent = "No hay muebles con error en la validacion actual.";
-                reporteContenidoEl.appendChild(crearElemento("div", "empty", "Sin errores para reportar."));
-                return;
-            }
-
-            reporteResumenEl.textContent = `${tarjetasError.length} muebles con error. ${documentNameEl.textContent}`;
-            const grupos = new Map();
-
-            tarjetasError.forEach(card => {
-                const op = card.dataset.op || "Sin OP";
-                if (!grupos.has(op)) grupos.set(op, []);
-                grupos.get(op).push(card);
-            });
-
-            Array.from(grupos.keys()).sort(compararNatural).forEach(op => {
-                const block = crearElemento("section", "op-block");
-                block.appendChild(crearElemento("div", "op-title", `OP: ${op}`));
-
-                grupos.get(op).forEach(card => {
-                    const copia = card.cloneNode(true);
-                    copia.style.display = "";
-                    copia.classList.add("report-card");
-                    block.appendChild(copia);
-                });
-
-                reporteContenidoEl.appendChild(block);
-            });
-        }
-
-        // Abre impresion enfocada al reporte para guardar como PDF.
-        function descargarReportePdf() {
-            if (!REPORTE_VISIBLE) mostrarReporteErrores();
-            document.body.classList.add("report-printing");
-            window.setTimeout(() => window.print(), 100);
-            window.setTimeout(() => document.body.classList.remove("report-printing"), 1200);
-        }
-
-        // Exporta a Excel los errores y las piezas visibles dentro del reporte.
-        function descargarReporteExcel() {
-            if (!window.XLSX) {
-                alert("No se pudo cargar la libreria de Excel.");
-                return;
-            }
-
-            if (!REPORTE_VISIBLE) mostrarReporteErrores();
-            const cards = Array.from(reporteContenidoEl.querySelectorAll(".mueble-container.err"));
-            if (cards.length === 0) {
-                alert("No hay errores para exportar.");
-                return;
-            }
-
-            const filas = [];
-            cards.forEach(card => {
-                const errores = Array.from(card.querySelectorAll(".validation-list li, .validation-item")).map(el => limpiarTextoReporte(el.textContent)).join(" | ");
-                const codigo = card.dataset.codpuro || limpiarTextoReporte(card.querySelector(".cod-mueble")?.textContent || "");
-                const op = card.dataset.op || "";
-                const dimensiones = limpiarTextoReporte(card.querySelector(".dim-tag")?.textContent || "");
-                const grosor = limpiarTextoReporte(card.querySelector(".thickness-tag")?.textContent || "");
-                const ubicacion = limpiarTextoReporte(card.querySelector(".ubi-tag")?.textContent || "");
-                const material = limpiarTextoReporte(card.querySelector(".material-tag")?.textContent || "");
-
-                filas.push({
-                    bloque: "MUEBLE",
-                    version_reglas: VERSION_REGLAS,
-                    op,
-                    codigo,
-                    dimensiones,
-                    grosor,
-                    ubicacion,
-                    material,
-                    errores,
-                    job: "",
-                    cod_pieza: "",
-                    cant_piezas: "",
-                    medida1: "",
-                    medida2: "",
-                    l1: "",
-                    l2: "",
-                    c1: "",
-                    c2: "",
-                    nomueble: ""
-                });
-
-                const headers = Array.from(card.querySelectorAll("thead th")).map(th => limpiarTextoReporte(th.textContent));
-                card.querySelectorAll("tbody tr").forEach(row => {
-                    const cells = Array.from(row.querySelectorAll("td")).map(td => limpiarTextoReporte(td.textContent));
-                    const pieza = { bloque: "PIEZA", version_reglas: VERSION_REGLAS, op, codigo, dimensiones: "", grosor: "", ubicacion: "", material: "", errores: "" };
-                    headers.forEach((header, index) => {
-                        pieza[header.toLowerCase()] = cells[index] || "";
-                    });
-                    filas.push(pieza);
-                });
-            });
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(filas);
-            ws["!cols"] = [
-                { wch: 10 }, { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 18 }, { wch: 10 }, { wch: 12 },
-                { wch: 34 }, { wch: 80 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 10 },
-                { wch: 10 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 10 }
-            ];
-            XLSX.utils.book_append_sheet(wb, ws, "Errores");
-            XLSX.writeFile(wb, `reporte_errores_${fechaArchivoReporte()}.xlsx`);
-        }
-
-        // Limpia espacios para exportaciones.
-        function limpiarTextoReporte(texto) {
-            return String(texto || "").replace(/\s+/g, " ").trim();
-        }
-
-        // Fecha corta para nombres de archivo.
-        function fechaArchivoReporte() {
-            const hoy = new Date();
-            const y = hoy.getFullYear();
-            const m = String(hoy.getMonth() + 1).padStart(2, "0");
-            const d = String(hoy.getDate()).padStart(2, "0");
-            return `${y}${m}${d}`;
-        }
-
-        function exportarReporteComparacion() {
-            if (!ULTIMO_RESULTADO_COMPARACION) return;
-
-            const filas = [["tipo", "fila_base", "fila_comparada", "detalle"]];
-            ULTIMO_RESULTADO_COMPARACION.faltan.forEach(item => {
-                filas.push(["Falta", item.fila, "", item.etiqueta]);
-            });
-            ULTIMO_RESULTADO_COMPARACION.sobran.forEach(item => {
-                filas.push(["Sobra", "", item.fila, item.etiqueta]);
-            });
-            ULTIMO_RESULTADO_COMPARACION.cambiadas.forEach(item => {
-                filas.push(["Cambia", item.base.fila, item.comparar.fila, `${item.base.etiqueta} | base: ${item.base.firma} | comparar: ${item.comparar.firma}`]);
-            });
-
-            descargarCsv("reporte-comparacion.csv", filas);
-        }
-
-        function descargarCsv(nombreArchivo, filas) {
-            const contenido = filas.map(fila => fila.map(valor => {
-                const texto = String(valor ?? "");
-                return /[",\n;]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
-            }).join(";")).join("\n");
-            const blob = new Blob([`\ufeff${contenido}`], { type: "text/csv;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            const enlace = document.createElement("a");
-            enlace.href = url;
-            enlace.download = nombreArchivo;
-            document.body.appendChild(enlace);
-            enlace.click();
-            enlace.remove();
-            URL.revokeObjectURL(url);
         }
 
         // Descifra el codigo escrito en el consultor independiente.
