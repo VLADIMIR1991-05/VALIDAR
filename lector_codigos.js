@@ -412,7 +412,8 @@ function extraerAlturaMm(texto) {
         }
 
 function extraerProfundidadMm(texto) {
-            const match = String(texto || "").toUpperCase().match(/(?<![\/-])P(\d+(?:[.,]\d+)?)/);
+            const matches = Array.from(String(texto || "").toUpperCase().matchAll(/(?<!\/)P(\d+(?:[.,]\d+)?)/g));
+            const match = matches[matches.length - 1];
             if (!match) return 0;
 
             const numero = Number.parseFloat(match[1].replace(",", "."));
@@ -434,7 +435,8 @@ function tipoUsaNumeroComoProfundidad(tipo) {
         }
 
 function profundidadEstructuraDesdeCodigo(texto, profundidadTotal, tipo = "") {
-            const match = String(texto || "").toUpperCase().match(/(?<![\/-])P(\d+(?:[.,]\d+)?)/);
+            const matches = Array.from(String(texto || "").toUpperCase().matchAll(/(?<!\/)P(\d+(?:[.,]\d+)?)/g));
+            const match = matches[matches.length - 1];
             const numero = match ? Number.parseFloat(match[1].replace(",", ".")) : 0;
             const profundidad = Number(profundidadTotal) || 0;
             const familia = String(tipo || "").toUpperCase();
