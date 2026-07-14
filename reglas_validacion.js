@@ -3,6 +3,15 @@
 // Para agregar una condicion nueva, normalmente se edita validarMedidasPieza()
 // y se agrega un detector pequeno debajo, como esPuerta(), esZocalo(), etc.
 
+// Valores base compartidos por las reglas generales de despiece.
+// Mantenerlos juntos evita que una misma fuga o espesor se calcule distinto
+// segun la pieza que se este validando.
+const REGLAS_DESPIECE_GENERAL = Object.freeze({
+            espesores: Object.freeze({ bajos: 18, altos: 15, closets: 15, otros: 18, respaldo: 6 }),
+            descuentos: Object.freeze({ anchoInternoExtra: 1, respaldoRanura: 10, repisaProfundidad: 110, tpmProfundidad: 52 }),
+            puertas: Object.freeze({ dosDesdeAncho: 620, fugaTotal: 3, henzo: 35, novak: 110 })
+        });
+
 function validarTodo() {
             // Marca que la vista ya fue validada.
             VALIDADO = true;
@@ -82,7 +91,7 @@ function validarMueble(card) {
             const grosorRespaldo = obtenerGrosorRespaldoDesdeCard(card);
 
             // Calcula ancho interno de base/techo/ajustes.
-            const anchoInternoBase = ancho > 0 ? ancho - (grosor * 2) - 1 : 0;
+            const anchoInternoBase = ancho > 0 ? ancho - (grosor * 2) - REGLAS_DESPIECE_GENERAL.descuentos.anchoInternoExtra : 0;
             const anchoInterno = ajustarAnchoInternoEspecial(card.dataset.tipoModulo || "", cod, anchoInternoBase);
 
             // Analiza OTP/OA como pareja de piezas antes de validar fila por fila.
@@ -326,17 +335,19 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esPuerta(nombre)) {
                 if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
 
-                const cantidadPuertas = modulo.ancho > 619 ? 2 : 1;
+                const cantidadPuertas = modulo.ancho >= REGLAS_DESPIECE_GENERAL.puertas.dosDesdeAncho ? 2 : 1;
                 const anchoPuertaCodigo = extraerAnchoPuertaDesdeCodigo(modulo.cod);
-                const anchoPuerta = anchoPuertaCodigo ? anchoPuertaCodigo - 3 : Math.round(modulo.ancho / cantidadPuertas) - 3;
-                const extraNovak = tieneNovak(modulo.cod) ? 110 : 0;
-                const descuentoHenzo = tieneHenzo(modulo.cod) ? 35 : 0;
+                const anchoPuerta = anchoPuertaCodigo
+                    ? anchoPuertaCodigo - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal
+                    : Math.round(modulo.ancho / cantidadPuertas) - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
+                const extraNovak = tieneNovak(modulo.cod) ? REGLAS_DESPIECE_GENERAL.puertas.novak : 0;
+                const descuentoHenzo = tieneHenzo(modulo.cod) ? REGLAS_DESPIECE_GENERAL.puertas.henzo : 0;
                 const contextoFF = modulo.contextoFrenteFalso || {};
                 const descuentoFrenteFalso = contextoFF.tieneFF ? 152 : 0;
                 const fugaFrenteFalso = contextoFF.tieneFF ? 38 : 0;
                 const altoPuerta = extraNovak
                     ? modulo.alto + extraNovak
-                    : modulo.alto - descuentoHenzo - descuentoFrenteFalso - fugaFrenteFalso - 3;
+                    : modulo.alto - descuentoHenzo - descuentoFrenteFalso - fugaFrenteFalso - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
                 const ok = coincideParMedidas(medida1, medida2, altoPuerta, anchoPuerta);
 
                 return {
@@ -583,7 +594,7 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esTpm(nombre)) {
                 if (!modulo.anchoInterno || !modulo.profundidad) return { ok: true, mensaje: "", valida: false };
 
-                const profundidadTpm = modulo.profundidad - 52;
+                const profundidadTpm = Math.max(modulo.profundidad - REGLAS_DESPIECE_GENERAL.descuentos.tpmProfundidad, 0);
                 const ok = coincideParMedidas(medida1, medida2, modulo.anchoInterno, profundidadTpm);
 
                 return {
@@ -663,7 +674,9 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esMaletera(nombre)) {
                 if (!modulo.anchoInterno) return { ok: true, mensaje: "", valida: false };
 
-                const profundidadMaletera = profundidadRepisaMovil(modulo);
+                // La maletera es una pieza horizontal estructural de closet:
+                // conserva la profundidad del casco y no hereda el descuento de una repisa movil.
+                const profundidadMaletera = modulo.profundidad;
                 const ok = coincideParMedidas(medida1, medida2, modulo.anchoInterno, profundidadMaletera);
 
                 return {
@@ -806,8 +819,8 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                     };
                 }
 
-                const anchoRespaldo = modulo.ancho - (modulo.grosor * 2) + 10;
-                const altoRespaldo = modulo.alto - (modulo.grosor * 2) + 10;
+                const anchoRespaldo = modulo.ancho - (modulo.grosor * 2) + REGLAS_DESPIECE_GENERAL.descuentos.respaldoRanura;
+                const altoRespaldo = modulo.alto - (modulo.grosor * 2) + REGLAS_DESPIECE_GENERAL.descuentos.respaldoRanura;
                 const ok = coincideParMedidas(medida1, medida2, anchoRespaldo, altoRespaldo);
 
                 return {
@@ -844,7 +857,16 @@ function obtenerGrosorMaterialDesdeItems(items) {
                 if (grosor) candidatas.push(grosor);
             });
 
-            return candidatas.find(grosor => grosor > 0) || 18;
+            return candidatas.find(grosor => grosor > 0) || 0;
+        }
+
+function grosorEstructuraPorDefecto(tipo) {
+            const familia = String(tipo || "").toUpperCase();
+
+            if (["A", "EA", "S", "ES"].includes(familia)) return REGLAS_DESPIECE_GENERAL.espesores.altos;
+            if (["CL", "CLOSET", "ECL"].includes(familia)) return REGLAS_DESPIECE_GENERAL.espesores.closets;
+            if (["B", "BS", "MBS", "MB", "EB"].includes(familia)) return REGLAS_DESPIECE_GENERAL.espesores.bajos;
+            return REGLAS_DESPIECE_GENERAL.espesores.otros;
         }
 
 function obtenerGrosorMaterialDesdeCard(card, preferirLaterales = false) {
@@ -863,7 +885,7 @@ function obtenerGrosorMaterialDesdeCard(card, preferirLaterales = false) {
             }
 
             const grosor = Number.parseFloat(card.dataset.grosorMaterial || "");
-            return Number.isFinite(grosor) && grosor > 0 ? grosor : 18;
+            return Number.isFinite(grosor) && grosor > 0 ? grosor : grosorEstructuraPorDefecto(card.dataset.tipoModulo);
         }
 
 function obtenerGrosorRespaldoDesdeCard(card) {
@@ -877,14 +899,15 @@ function obtenerGrosorRespaldoDesdeCard(card) {
                 if (grosor) candidatos.push(grosor);
             });
 
-            return candidatos.find(grosor => grosor > 0) || 6;
+            return candidatos.find(grosor => grosor > 0) || REGLAS_DESPIECE_GENERAL.espesores.respaldo;
         }
 
 function profundidadRepisaMovil(modulo) {
             const profundidad = Number(modulo.profundidad) || 0;
             const ajusteAlto = profundidad === 320 ? 40 : 0;
 
-            return profundidad > 110 ? profundidad - 110 + ajusteAlto : profundidad;
+            const descuento = REGLAS_DESPIECE_GENERAL.descuentos.repisaProfundidad;
+            return profundidad > descuento ? profundidad - descuento + ajusteAlto : profundidad;
         }
 
 function esModuloAlto(modulo) {

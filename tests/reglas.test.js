@@ -56,4 +56,20 @@ assert.strictEqual(resultado.ok, true, "frente falso debe medir 152 por ancho me
 resultado = validar("RESP", 574, 734);
 assert.strictEqual(resultado.ok, true, "respaldo debe usar descuento de espesores y ranura");
 
+resultado = validar("MALE", 563, 580, { tipo: "CL" });
+assert.strictEqual(resultado.ok, true, "maletera de closet debe conservar la profundidad estructural completa");
+
+resultado = validar("MALE", 563, 470, { tipo: "CL" });
+assert.strictEqual(resultado.ok, false, "maletera no debe usar el descuento de profundidad de una repisa movil");
+
+assert.strictEqual(context.grosorEstructuraPorDefecto("B"), 18, "modulos bajos usan estructura de 18 mm por defecto");
+assert.strictEqual(context.grosorEstructuraPorDefecto("A"), 15, "modulos altos usan estructura de 15 mm por defecto");
+assert.strictEqual(context.grosorEstructuraPorDefecto("CL"), 15, "closets usan estructura de 15 mm por defecto");
+
+resultado = validar("PT", 757, 307, { ancho: 620 });
+assert.strictEqual(resultado.ok, true, "desde 620 mm la puerta se divide en dos hojas");
+
+resultado = validar("TPM", 563, 0, { profundidad: 40 });
+assert.strictEqual(resultado.ok, true, "TPM no debe producir profundidades negativas en modulos poco profundos");
+
 console.log("Pruebas de reglas OK");

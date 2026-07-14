@@ -42,6 +42,9 @@ Si faltan columnas requeridas, la app muestra una advertencia y mantiene la tabl
 - Pruebas automatizadas basicas para reglas criticas.
 - Documentacion del formato esperado.
 - Separacion operativa clara entre base de codigos, lector, reglas y pantalla.
+- Espesores estructurales por defecto segun familia: bajos 18 mm; altos y closets 15 mm.
+- Maleteras de closet validadas con profundidad completa, sin confundirlas con repisas moviles.
+- Constantes generales de fugas, ranura, puertas, TPM y repisas centralizadas para evitar reglas divergentes.
 
 ## Desarrollo
 

@@ -1181,7 +1181,7 @@
             const ubicacion = obtenerPrimerValor(items, ["ubicacion", "ubi", "nomueble"]);
 
             // Obtiene el grosor desde materiales de piezas estructurales.
-            const grosorGeneral = obtenerGrosorMaterialDesdeItems(items);
+            const grosorGeneral = obtenerGrosorMaterialDesdeItems(items) || grosorEstructuraPorDefecto(dimensionesModulo.tipo);
             const grosorMaterial = dimensionesModulo.tipo === "BAR"
                 ? obtenerGrosorLateralesDesdeItems(items) || grosorGeneral
                 : grosorGeneral;
