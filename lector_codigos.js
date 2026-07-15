@@ -35,6 +35,12 @@ function combinarTokensEspeciales(partes) {
                     continue;
                 }
 
+                if (actual === "S" && siguiente === "B") {
+                    resultado.push("S/B");
+                    i++;
+                    continue;
+                }
+
                 if (actual === "SIN" && siguiente === "ACV") {
                     resultado.push("SIN-ACV");
                     i++;
@@ -272,6 +278,9 @@ function traducirTipoModulo(tipo) {
                 A: "Modulo Alto",
                 S: "Modulo Suspendido",
                 BS: "Modulo Bajo Suspendido",
+                BSX: "Bastidor Suspendido Auxiliar",
+                "LATR-H": "Lateral Alto Decorativo Tipo Recto",
+                LB: "Lateral Bajo Decorativo",
                 MBS: "Mueble Bajo Suspendido",
                 BAR: "Bar",
                 X: "Modulo Auxiliar",
@@ -399,10 +408,11 @@ function convertirNumeroCodigoAMm(valor) {
 function extraerAlturaMm(texto) {
             const limpio = String(texto || "").toUpperCase();
 
-            if (limpio.includes("HE")) return 1360;
-
             const match = limpio.match(/H(\d+(?:[.,]\d+)?)/);
-            if (!match) return 0;
+            if (!match) {
+                // HE solo cuenta cuando es un marcador real; FRENTE y HERRAJE no son alturas.
+                return /HE(?:$|[-+])/.test(limpio) ? 1360 : 0;
+            }
 
             const codigo = `H${match[1].replace(",", ".")}`;
             const desdeDb = DB[codigo] ? String(DB[codigo]).match(/(\d+(?:\.\d+)?)\s*mm/i) : null;
@@ -453,6 +463,7 @@ function profundidadEstructuraDesdeCodigo(texto, profundidadTotal, tipo = "") {
 function profundidadPorDefecto(tipo) {
             const familia = String(tipo || "").toUpperCase();
 
+            if (familia === "BSX") return 75;
             if (["A", "EA"].includes(familia)) return 320;
             if (["BS", "MBS", "S", "ES"].includes(familia)) return 530;
             if (familia === "MB") return 530;

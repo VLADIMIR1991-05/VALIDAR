@@ -9,7 +9,8 @@
 const REGLAS_DESPIECE_GENERAL = Object.freeze({
             espesores: Object.freeze({ bajos: 18, altos: 15, closets: 15, otros: 18, respaldo: 6 }),
             descuentos: Object.freeze({ anchoInternoExtra: 1, respaldoRanura: 10, repisaProfundidad: 110, tpmProfundidad: 52 }),
-            puertas: Object.freeze({ dosDesdeAncho: 620, fugaTotal: 3, henzo: 35, novak: 110 })
+            puertas: Object.freeze({ dosDesdeAncho: 620, fugaTotal: 3, fugaEntreFrentes: 6, henzo: 35, novak: 110 }),
+            alturas: Object.freeze({ h1: 190, frenteGavetaMicroondas: 267 })
         });
 
 function validarTodo() {
@@ -283,6 +284,19 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                 };
             }
 
+            if (esTapaLosa(nombre)) {
+                const anchoTapa = modulo.ancho;
+                const profundidadTapa = modulo.profundidadTotal || modulo.profundidad;
+                if (!anchoTapa || !profundidadTapa) return { ok: true, mensaje: "", valida: false };
+
+                return {
+                    ok: coincideParMedidas(medida1, medida2, anchoTapa, profundidadTapa),
+                    mensaje: `deberia medir ${anchoTapa} x ${profundidadTapa} mm como tapa losa, conservando la profundidad total del codigo.`,
+                    valida: true,
+                    objetivos: [anchoTapa, profundidadTapa]
+                };
+            }
+
             if (esTapaDecorativa(nombre)) {
                 const medidaA = modulo.ancho || modulo.anchoInterno;
                 const medidaB = modulo.profundidadTotal || modulo.profundidad || modulo.alto;
@@ -335,7 +349,11 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esPuerta(nombre)) {
                 if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
 
-                const cantidadPuertas = modulo.ancho >= REGLAS_DESPIECE_GENERAL.puertas.dosDesdeAncho ? 2 : 1;
+                // PT-ABX representa una sola puerta abatible aunque el modulo supere 620 mm.
+                const cantidadExplicita = extraerCantidadPuertasDesdeCodigo(modulo.cod);
+                const cantidadPuertas = nombre.includes("ABX")
+                    ? 1
+                    : cantidadExplicita || (modulo.ancho >= REGLAS_DESPIECE_GENERAL.puertas.dosDesdeAncho ? 2 : 1);
                 const anchoPuertaCodigo = extraerAnchoPuertaDesdeCodigo(modulo.cod);
                 const anchoPuerta = anchoPuertaCodigo
                     ? anchoPuertaCodigo - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal
@@ -345,14 +363,19 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                 const contextoFF = modulo.contextoFrenteFalso || {};
                 const descuentoFrenteFalso = contextoFF.tieneFF ? 152 : 0;
                 const fugaFrenteFalso = contextoFF.tieneFF ? 38 : 0;
-                const altoPuerta = extraNovak
+                const altoPuertaBase = extraNovak
                     ? modulo.alto + extraNovak
                     : modulo.alto - descuentoHenzo - descuentoFrenteFalso - fugaFrenteFalso - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
+                const altoPuerta = esModuloGavetaConPuertasMrv(modulo.cod)
+                    ? modulo.alto - REGLAS_DESPIECE_GENERAL.alturas.h1 - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal
+                    : altoPuertaBase;
                 const ok = coincideParMedidas(medida1, medida2, altoPuerta, anchoPuerta);
 
                 return {
                     ok,
-                    mensaje: extraNovak
+                    mensaje: esModuloGavetaConPuertasMrv(modulo.cod)
+                        ? `deberia medir ${altoPuerta} x ${anchoPuerta} mm: la gaveta ocupa H1 y las puertas usan el alto restante con 3 mm de fuga.`
+                        : extraNovak
                         ? `deberia medir ${altoPuerta} x ${anchoPuerta} mm como puerta Novak, sumando 110 mm solo a la altura.`
                         : descuentoFrenteFalso
                             ? `deberia medir ${altoPuerta} x ${anchoPuerta} mm como puerta con frente falso FF, descontando FF, fuga extra de 38 mm y 1.5 mm por lado.`
@@ -381,6 +404,16 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
 
             if (esFrenteVertical(nombre)) {
                 if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
+
+                if (esFrenteVistoHenzo(nombre)) {
+                    const altoFrenteHenzo = modulo.alto - REGLAS_DESPIECE_GENERAL.puertas.henzo - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
+                    return {
+                        ok: coincideParMedidas(medida1, medida2, altoFrenteHenzo, modulo.ancho),
+                        mensaje: `deberia medir ${altoFrenteHenzo} x ${modulo.ancho} mm como frente visto Henzo.`,
+                        valida: true,
+                        objetivos: [altoFrenteHenzo, modulo.ancho]
+                    };
+                }
 
                 const anchoPuertaCodigo = extraerAnchoPuertaDesdeCodigo(modulo.cod);
                 const anchoFrenteBase = anchoPuertaCodigo
@@ -413,6 +446,48 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                 };
             }
 
+            if (esFrenteMicroondas(nombre) && esModuloMicroondasMrvHenzo(modulo.cod)) {
+                if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
+
+                const anchoFrente = modulo.ancho - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
+                const altoFrente = modulo.alto
+                    - REGLAS_DESPIECE_GENERAL.alturas.frenteGavetaMicroondas
+                    - REGLAS_DESPIECE_GENERAL.puertas.fugaEntreFrentes
+                    - REGLAS_DESPIECE_GENERAL.puertas.henzo;
+                return {
+                    ok: coincideParMedidas(medida1, medida2, altoFrente, anchoFrente),
+                    mensaje: `deberia medir ${altoFrente} x ${anchoFrente} mm como frente de microondas; completa el alto junto al frente de gaveta, 6 mm de fugas y 35 mm Henzo.`,
+                    valida: true,
+                    objetivos: [altoFrente, anchoFrente]
+                };
+            }
+
+            if (esLateralAltoDecorativo(nombre, modulo)) {
+                const altoLateral = modulo.ancho || modulo.alto;
+                const profundidadLateral = 340;
+                if (!altoLateral) return { ok: true, mensaje: "", valida: false };
+
+                return {
+                    ok: coincideParMedidas(medida1, medida2, altoLateral, profundidadLateral),
+                    mensaje: `deberia medir ${altoLateral} x ${profundidadLateral} mm como lateral alto decorativo, sin descuentos.`,
+                    valida: true,
+                    objetivos: [altoLateral, profundidadLateral]
+                };
+            }
+
+            if (esLateralBajoDecorativo(nombre, modulo)) {
+                const altoLateral = 878;
+                const anchoLateral = modulo.ancho;
+                if (!anchoLateral) return { ok: true, mensaje: "", valida: false };
+
+                return {
+                    ok: coincideParMedidas(medida1, medida2, altoLateral, anchoLateral),
+                    mensaje: `deberia medir ${altoLateral} x ${anchoLateral} mm como lateral bajo LB; 878 mm es la altura fija.`,
+                    valida: true,
+                    objetivos: [altoLateral, anchoLateral]
+                };
+            }
+
             if (esFrentePp(nombre)) {
                 if (!modulo.ancho || !modulo.alto) return { ok: true, mensaje: "", valida: false };
 
@@ -430,6 +505,17 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
 
             if (esFrenteCajon(nombre)) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
+
+                if (esModuloMicroondasMrvHenzo(modulo.cod)) {
+                    const anchoFrente = modulo.ancho - REGLAS_DESPIECE_GENERAL.puertas.fugaTotal;
+                    const altoFrente = REGLAS_DESPIECE_GENERAL.alturas.frenteGavetaMicroondas;
+                    return {
+                        ok: coincideParMedidas(medida1, medida2, altoFrente, anchoFrente),
+                        mensaje: `deberia medir ${altoFrente} x ${anchoFrente} mm como frente de gaveta del modulo microondas Henzo.`,
+                        valida: true,
+                        objetivos: [altoFrente, anchoFrente]
+                    };
+                }
 
                 if (esModuloFld(modulo)) {
                     const altoFrenteCompleto = modulo.alto || modulo.profundidad;
@@ -459,7 +545,8 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
 
                 const anchoMrv = modulo.ancho - 88;
-                const profundidadMrv = 474;
+                const profundidadReferencia = Number(modulo.profundidadTotal) || Number(modulo.profundidad) || 0;
+                const profundidadMrv = profundidadReferencia > 0 && profundidadReferencia <= 440 ? 324 : 474;
                 const ok = coincideParMedidas(medida1, medida2, anchoMrv, profundidadMrv);
 
                 return {
@@ -467,6 +554,30 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                     mensaje: `deberia medir ${anchoMrv} x ${profundidadMrv} mm como fondo MRV.`,
                     valida: true,
                     objetivos: [anchoMrv, profundidadMrv]
+                };
+            }
+
+            if (esFondoMetabox(nombre)) {
+                if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
+                const anchoMetabox = modulo.ancho - 68;
+                const fondoMetabox = 483;
+                return {
+                    ok: coincideParMedidas(medida1, medida2, anchoMetabox, fondoMetabox),
+                    mensaje: `deberia medir ${anchoMetabox} x ${fondoMetabox} mm como fondo Metabox; 483 mm es constante y el ancho descuenta 68 mm.`,
+                    valida: true,
+                    objetivos: [anchoMetabox, fondoMetabox]
+                };
+            }
+
+            if (esPosteriorMetabox(nombre)) {
+                if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
+                const anchoMetabox = modulo.ancho - 68;
+                const altoPosteriorMetabox = 71;
+                return {
+                    ok: coincideParMedidas(medida1, medida2, anchoMetabox, altoPosteriorMetabox),
+                    mensaje: `deberia medir ${anchoMetabox} x ${altoPosteriorMetabox} mm como posterior Metabox; 71 mm es constante y el ancho descuenta 68 mm.`,
+                    valida: true,
+                    objetivos: [anchoMetabox, altoPosteriorMetabox]
                 };
             }
 
@@ -488,13 +599,13 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esFondoSlim(nombre)) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
 
-                const anchoSlim = modulo.ancho - 87;
+                const anchoSlim = modulo.ancho - 56;
                 const profundidadSlim = 490;
                 const ok = coincideParMedidas(medida1, medida2, anchoSlim, profundidadSlim);
 
                 return {
                     ok,
-                    mensaje: `deberia medir ${anchoSlim} x ${profundidadSlim} mm como fondo sistema Slim.`,
+                    mensaje: `deberia medir ${anchoSlim} x ${profundidadSlim} mm como fondo Slim; descuenta 56 mm del ancho y usa 490 mm constantes.`,
                     valida: true,
                     objetivos: [anchoSlim, profundidadSlim]
                 };
@@ -503,19 +614,30 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esPosicionSlim(nombre)) {
                 if (!modulo.ancho) return { ok: true, mensaje: "", valida: false };
 
-                const anchoSlim = modulo.ancho - 108;
-                const alturasPosicionSlim = [89, 101, 128];
+                const anchoSlim = modulo.ancho - 77;
+                const alturasPosicionSlim = [63, 199, 300];
                 const ok = alturasPosicionSlim.some(altura => coincideParMedidas(medida1, medida2, anchoSlim, altura));
 
                 return {
                     ok,
-                    mensaje: `deberia medir ${anchoSlim} x 89/101/128 mm como posicion sistema Slim.`,
+                    mensaje: `deberia medir ${anchoSlim} x 63/199/300 mm como posterior Slim; descuenta 77 mm del ancho.`,
                     valida: true,
                     objetivos: [anchoSlim, ...alturasPosicionSlim]
                 };
             }
 
             if (esFrisoSlim(nombre)) {
+                if (modulo.ancho) {
+                    const anchoFriso = modulo.ancho - 40;
+                    const altoFriso = 110;
+                    return {
+                        ok: coincideParMedidas(medida1, medida2, anchoFriso, altoFriso),
+                        mensaje: `deberia medir ${anchoFriso} x ${altoFriso} mm como frente interno Slim; descuenta 40 mm del ancho y usa 110 mm de alto.`,
+                        valida: true,
+                        objetivos: [anchoFriso, altoFriso]
+                    };
+                }
+
                 const alturaFrenteInterno = 135;
                 const ok = coincideMedida(medida1, alturaFrenteInterno) || coincideMedida(medida2, alturaFrenteInterno);
 
@@ -636,6 +758,27 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esBaseOTecho(nombre)) {
                 if (!modulo.anchoInterno) return { ok: true, mensaje: "", valida: false };
 
+                if (esTecho(nombre) && tieneMerivobox(modulo.cod)) {
+                    const grosorRespaldo = modulo.grosorRespaldo || REGLAS_DESPIECE_GENERAL.espesores.respaldo;
+                    const profundidadTechoMrv = modulo.profundidad - modulo.grosor - 1 - grosorRespaldo - 1;
+                    return {
+                        ok: coincideParMedidas(medida1, medida2, modulo.anchoInterno, profundidadTechoMrv),
+                        mensaje: `deberia medir ${modulo.anchoInterno} x ${profundidadTechoMrv} mm como techo especial con Merivobox.`,
+                        valida: true,
+                        objetivos: [modulo.anchoInterno, profundidadTechoMrv]
+                    };
+                }
+
+                if (esBase(nombre) && String(modulo.tipo || "").toUpperCase() === "FB") {
+                    const fondoForroBajo = 60;
+                    return {
+                        ok: coincideParMedidas(medida1, medida2, modulo.anchoInterno, fondoForroBajo),
+                        mensaje: `deberia medir ${modulo.anchoInterno} x ${fondoForroBajo} mm como base de forro bajo.`,
+                        valida: true,
+                        objetivos: [modulo.anchoInterno, fondoForroBajo]
+                    };
+                }
+
                 if (!modulo.profundidad) {
                     const okAncho = coincideMedida(medida1, modulo.anchoInterno) || coincideMedida(medida2, modulo.anchoInterno);
 
@@ -674,9 +817,7 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
             if (esMaletera(nombre)) {
                 if (!modulo.anchoInterno) return { ok: true, mensaje: "", valida: false };
 
-                // La maletera es una pieza horizontal estructural de closet:
-                // conserva la profundidad del casco y no hereda el descuento de una repisa movil.
-                const profundidadMaletera = modulo.profundidad;
+                const profundidadMaletera = profundidadRepisaMovil(modulo);
                 const ok = coincideParMedidas(medida1, medida2, modulo.anchoInterno, profundidadMaletera);
 
                 return {
@@ -684,6 +825,19 @@ function validarMedidasPieza(pieza, medida1, medida2, modulo) {
                     mensaje: `deberia medir ${modulo.anchoInterno} x ${profundidadMaletera} mm como maletera.`,
                     valida: true,
                     objetivos: [modulo.anchoInterno, profundidadMaletera]
+                };
+            }
+
+            if (esZapatera(nombre)) {
+                if (!modulo.anchoInterno) return { ok: true, mensaje: "", valida: false };
+
+                const anchoZapatera = modulo.anchoInterno - 1;
+                const profundidadZapatera = 320;
+                return {
+                    ok: coincideParMedidas(medida1, medida2, anchoZapatera, profundidadZapatera),
+                    mensaje: `deberia medir ${anchoZapatera} x ${profundidadZapatera} mm como zapatera; usa ancho interno menos 1 mm y profundidad fija 320 mm.`,
+                    valida: true,
+                    objetivos: [anchoZapatera, profundidadZapatera]
                 };
             }
 
@@ -1049,6 +1203,8 @@ function profundidadLateralModulo(modulo) {
             const profundidadTotal = Number(modulo && modulo.profundidadTotal) || 0;
             const profundidad = Number(modulo && modulo.profundidad) || 0;
 
+            if (tipo === "FB") return 150;
+
             if (tipo.startsWith("FVLB")) {
                 return profundidadTotal || profundidad || 150;
             }
@@ -1058,6 +1214,10 @@ function profundidadLateralModulo(modulo) {
             }
 
             return profundidad;
+        }
+
+function tieneMerivobox(cod) {
+            return String(cod || "").toUpperCase().includes("MRV");
         }
 
 function tieneSoloDosDimensiones(modulo) {
@@ -1088,6 +1248,7 @@ function normalizarPieza(pieza) {
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "")
                 .replace(/\s+/g, "")
+                .replace(/^ESP\d+/, "")
                 .trim();
         }
 
@@ -1099,6 +1260,10 @@ function esPuerta(pieza) {
             const normal = normalizarPieza(pieza);
             if (normal.includes("ABF") || normal.includes("ABE")) return false;
             return normal === "PT" || normal.startsWith("PT-");
+        }
+
+function esTapaLosa(pieza) {
+            return normalizarPieza(pieza) === "TPL";
         }
 
 function tieneNovak(cod) {
@@ -1116,6 +1281,23 @@ function extraerAnchoPuertaDesdeCodigo(cod) {
             if (!Number.isFinite(numero)) return 0;
 
             return Math.round(numero < 20 ? numero * 100 : numero * 10);
+        }
+
+function extraerCantidadPuertasDesdeCodigo(cod) {
+            const match = String(cod || "").toUpperCase().match(/(?:^|[-+])(\d+)P(?:$|[-+])/);
+            return match ? Number.parseInt(match[1], 10) || 0 : 0;
+        }
+
+function esModuloGavetaConPuertasMrv(cod) {
+            const codigo = String(cod || "").toUpperCase();
+            return /(?:^|[-+])G1(?:$|[-+])/.test(codigo)
+                && extraerCantidadPuertasDesdeCodigo(codigo) > 0
+                && codigo.includes("MRV");
+        }
+
+function esModuloMicroondasMrvHenzo(cod) {
+            const codigo = String(cod || "").toUpperCase();
+            return codigo.includes("MH") && codigo.includes("G1MRV") && codigo.includes("HZ");
         }
 
 function esFrenteCajon(pieza) {
@@ -1168,7 +1350,29 @@ function esCostadoInterno(pieza) {
 
 function esFrenteVertical(pieza) {
             const normal = normalizarPieza(pieza);
-            return normal === "FV" || normal.startsWith("FV-");
+            return normal === "FV" || normal.startsWith("FV-") || normal.startsWith("FVHZ");
+        }
+
+function esLateralAltoDecorativo(pieza, modulo) {
+            const normal = normalizarPieza(pieza);
+            const tipo = String(modulo && modulo.tipo || "").toUpperCase();
+            return normal === "LATR" && (tipo === "LATR-H" || String(modulo && modulo.cod || "").toUpperCase().startsWith("LATR-H"));
+        }
+
+function esLateralBajoDecorativo(pieza, modulo) {
+            const normal = normalizarPieza(pieza);
+            const tipo = String(modulo && modulo.tipo || "").toUpperCase();
+            return normal.startsWith("LB") && tipo === "LB";
+        }
+
+function esFrenteVistoHenzo(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal.startsWith("FVHZ") || normal.startsWith("FV-HZ");
+        }
+
+function esFrenteMicroondas(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal === "FRE" || normal.startsWith("FRE=");
         }
 
 function esFrenteFalso(pieza) {
@@ -1185,6 +1389,16 @@ function esFrentePp(pieza) {
 function esFondoMerivobox(pieza) {
             const normal = normalizarPieza(pieza);
             return normal === "FON-MRV" || normal === "FONMRV" || (normal.startsWith("FON") && normal.includes("MRV"));
+        }
+
+function esFondoMetabox(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal === "FON-SM" || normal === "FONSM" || (normal.startsWith("FON") && normal.includes("-SM"));
+        }
+
+function esPosteriorMetabox(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal === "POS-SM" || normal === "POSSM" || (normal.startsWith("POS") && normal.includes("-SM"));
         }
 
 function esPosicionMerivobox(pieza) {
@@ -1214,6 +1428,7 @@ function esFrisoSlim(pieza) {
 function esFondoOPosicion(pieza) {
             const normal = normalizarPieza(pieza);
             if (esFrentePp(normal)) return false;
+            if (normal.includes("=")) return false;
             return normal.startsWith("FON") ||
                 normal.startsWith("POS") ||
                 normal.startsWith("FRI") ||
@@ -1251,7 +1466,12 @@ function esRepisaPortacopas(pieza) {
 
 function esMaletera(pieza) {
             const normal = normalizarPieza(pieza);
-            return normal === "MALE" || normal.startsWith("MALE");
+            return normal === "MAL" || normal === "MALE" || normal.startsWith("MAL-") || normal.startsWith("MALE");
+        }
+
+function esZapatera(pieza) {
+            const normal = normalizarPieza(pieza);
+            return normal === "ZAPAP" || normal.startsWith("ZAPA");
         }
 
 function esRepisaTapa(pieza) {
